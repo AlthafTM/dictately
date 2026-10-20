@@ -29,6 +29,10 @@ pub struct Display {
     visible: bool,
     closing: bool,
     animation: Instant,
+    panel_progress:f32,
+    content_progress:f32,
+    transition_panel:f32,
+    transition_content:f32,
     cue_at: Instant,
     end_started: Option<Instant>,
     origin: (i32, i32),
@@ -43,6 +47,7 @@ pub struct Display {
     old_bitmap: HGDIOBJ,
     pixels: *mut u32,
     frame: Vec<u32>,
+    content: Vec<u32>,
     background: Vec<u32>,
     body_shades: Vec<f32>,
     rim_shades: Vec<f32>,
@@ -58,7 +63,8 @@ pub struct Display {
 fn smooth(v: f32) -> f32 { let v=v.clamp(0.,1.); v*v*(3.-2.*v) }
 fn capsule_distance(x: f32, y: f32, hw: f32, hh: f32, radius: f32) -> f32 {
     let qx=x.abs()-(hw-radius); let qy=y.abs()-(hh-radius);
-    (qx.max(0.).powi(2)+qy.max(0.).powi(2)).sqrt()+qx.max(qy).min(0.)-radius
+    if qx<=0. || qy<=0. {qx.max(qy)-radius}
+    else {(qx*qx+qy*qy).sqrt()-radius}
 }
 fn premultiplied(shade: f32, alpha: f32) -> u32 {
     let a=(alpha.clamp(0.,1.)*255.).round() as u32;
@@ -69,6 +75,18 @@ fn over(destination: u32, shade: f32, alpha: f32) -> u32 {
     let a=alpha+(destination>>24) as f32/255.*(1.-alpha);
     let c=(shade*alpha+(destination&255) as f32*(1.-alpha)).round().clamp(0.,255.) as u32;
     c|c<<8|c<<16|((a*255.).round().clamp(0.,255.) as u32)<<24
+}
+fn content_phase(age:f32,closing:bool,from:f32)->f32 {
+    if closing {from*(1.-smooth(age/0.20))}
+    else {from+(1.-from)*smooth((age-0.055)/0.31)}
+}
+// Content remains a complete layer while the shell changes width. Sampling
+// premultiplied gray and alpha together avoids dark fringes around moving text.
+fn blend_content(destination:u32,gray:f32,alpha:f32,opacity:f32)->u32 {
+    let a=alpha*opacity/255.;
+    let c=(gray*opacity+(destination&255) as f32*(1.-a)).round().clamp(0.,255.) as u32;
+    let alpha=(alpha*opacity+(destination>>24) as f32*(1.-a)).round().clamp(0.,255.) as u32;
+    c|c<<8|c<<16|alpha<<24
 }
 // Position follows the capsule perimeter, rather than sliding across its fill.
 fn perimeter(x:f32,y:f32,hw:f32,hh:f32,r:f32)->f32 {
@@ -108,9 +126,10 @@ impl Display {
         let mut result=Self { hwnd,title:String::new(),subtitle:String::new(),preview:String::new(),recording:false,
             language:"EN".into(),wave:VecDeque::from(vec![0.;20]),visible:false,closing:false,animation:now,cue_at:now,
             end_started:None,origin:(0,0),dpi:0,width:0,height:0,rw:0,rh:0,sample_scale:2.,dc,
+            panel_progress:0.,content_progress:0.,transition_panel:0.,transition_content:0.,
             picker:false,selected:0,hovered:None,logical_width:WIDTH,logical_height:HEIGHT,labels:Vec::new(),options:Vec::new(),
             rail:Vec::new(),selected_position:0.,hover_levels:[0.;3],
-            bitmap:std::ptr::null_mut(),old_bitmap:std::ptr::null_mut(),pixels:std::ptr::null_mut(),frame:Vec::new(),
+            bitmap:std::ptr::null_mut(),old_bitmap:std::ptr::null_mut(),pixels:std::ptr::null_mut(),frame:Vec::new(),content:Vec::new(),
             background:Vec::new(),body_shades:Vec::new(),rim_shades:Vec::new(),edges:Vec::new(),shine:[0.;PROFILE],
             levels:[0.;20],last_frame:now,preview_path:std::env::var_os("LOCALFLOW_PREVIEW_DIR")
                 .map(|p|std::path::PathBuf::from(p).join("glass-frame.bgra")),last_preview:now,
@@ -136,7 +155,7 @@ impl Display {
         // Alpha supplies the rounded shape at every animation width; no fixed region to blur/clip it.
         SetWindowRgn(self.hwnd,std::ptr::null_mut(),0);
         let count=(self.rw*self.rh) as usize;
-        self.frame=vec![0;count]; self.background=vec![0;count]; self.body_shades=vec![0.;count];
+        self.frame=vec![0;count]; self.content=vec![0;count]; self.background=vec![0;count]; self.body_shades=vec![0.;count];
         self.rim_shades=vec![0.;count]; self.edges.clear();
         let hw=self.logical_width as f32/2.-1.; let hh=self.logical_height as f32/2.-1.;
         let radius=if self.picker {28.}else{hh};
@@ -193,17 +212,17 @@ impl Display {
         (0..3).find(|i| {let left=20.+*i as f32*114.;x>=left&&x<=left+112.&&y>=56.&&y<=92.})
     }
     fn render_options(&mut self,age:f32,dt:f32) {
+        self.content.fill(0);
         let settle=1.-(-dt/0.065).exp();
         self.selected_position+=(self.selected as f32-self.selected_position)*settle;
         for option in 0..3 {self.hover_levels[option]+=((if self.hovered==Some(option) {1.}else{0.})-self.hover_levels[option])*settle;}
         for &(index,mask,shade) in &self.rail {
-            let alpha=(self.frame[index]>>24) as f32/255.;self.frame[index]=over(self.frame[index],shade,mask*alpha);
+            self.content[index]=over(self.content[index],shade,mask);
         }
         for (option,pixels) in self.options.iter().enumerate() {
             for &(index,mask,vertical) in pixels {
-                let alpha=(self.frame[index]>>24) as f32/255.;if alpha==0. {continue;}
                 let _=vertical;
-                self.frame[index]=over(self.frame[index],75.,mask*alpha*self.hover_levels[option]*0.32);
+                self.content[index]=over(self.content[index],75.,mask*self.hover_levels[option]*0.32);
             }
         }
         let left=20.+114.*self.selected_position;
@@ -211,8 +230,8 @@ impl Display {
             let px=(x as f32+0.5)/self.sample_scale;let py=(y as f32+0.5)/self.sample_scale;
             let d=capsule_distance(px-(left+56.),py-74.,56.,18.,18.);
             let mask=(0.5-d*self.sample_scale).clamp(0.,1.);let index=(y*self.rw+x) as usize;
-            let alpha=(self.frame[index]>>24) as f32/255.;let shine=(1.-(py-56.)/36.).clamp(0.,1.);
-            self.frame[index]=over(self.frame[index],204.+shine*35.,mask*alpha);
+            let shine=(1.-(py-56.)/36.).clamp(0.,1.);
+            self.content[index]=over(self.content[index],204.+shine*35.,mask);
         }}
         let w=(112.*self.sample_scale) as i32;let h=(22.*self.sample_scale) as i32;
         for label in 0..4 {
@@ -223,8 +242,8 @@ impl Display {
             let shade=220.*(1.-proximity)+22.*proximity;
             for y in 0..h {for x in 0..w {
                 let px=ox+x;let py=oy+y;if px<0 || px>=self.rw || py<0 || py>=self.rh {continue;}
-                let index=(py*self.rw+px) as usize;let body=(self.frame[index]>>24) as f32/255.;
-                self.frame[index]=over(self.frame[index],shade,self.labels[label][(y*w+x) as usize] as f32/255.*body);
+                let index=(py*self.rw+px) as usize;
+                self.content[index]=over(self.content[index],shade,self.labels[label][(y*w+x) as usize] as f32/255.);
             }}
         }
         let level=self.wave.back().copied().unwrap_or(0.);
@@ -234,8 +253,8 @@ impl Display {
                 for x in ((cx-2.)*self.sample_scale) as i32..((cx+2.)*self.sample_scale) as i32 {
                     if x<0||y<0||x>=self.rw||y>=self.rh {continue;}
                     let d=capsule_distance((x as f32+0.5)/self.sample_scale-cx,(y as f32+0.5)/self.sample_scale-27.,1.1,height/2.,1.1);
-                    let index=(y*self.rw+x) as usize;let alpha=(self.frame[index]>>24) as f32/255.;
-                    self.frame[index]=over(self.frame[index],215.,(0.5-d*self.sample_scale).clamp(0.,1.)*alpha);
+                    let index=(y*self.rw+x) as usize;
+                    self.content[index]=over(self.content[index],215.,(0.5-d*self.sample_scale).clamp(0.,1.));
                 }
             }
         }
@@ -245,6 +264,44 @@ impl Display {
         let rim=(1.0-distance.abs()).clamp(0.,1.);
         let shade=self.body_shades[index]*(1.-rim*0.65)+self.rim_shades[index]*rim*0.65;
         premultiplied(shade,(0.82+rim*0.14)*mask)
+    }
+    fn composite_options(&mut self) {
+        let opacity=self.content_progress;
+        if opacity<=0. {return;}
+        if self.panel_progress>=0.9999 && opacity>=0.9999 {
+            for (destination,source) in self.frame.iter_mut().zip(&self.content) {
+                if source>>24>0 {*destination=blend_content(*destination,(source&255) as f32,(source>>24) as f32,1.);}
+            }
+            return;
+        }
+        let sx=(self.panel_progress*(0.94+0.06*opacity)).max(0.001);
+        let sy=0.94+0.06*opacity;
+        let cx=self.rw as f32/2.;let cy=self.rh as f32/2.;
+        let rise=6.*(1.-opacity)*self.sample_scale;
+        // Inverse mapping avoids gaps as the rail and glyphs widen together.
+        let left=(cx+(15.*self.sample_scale-cx)*sx).floor().max(0.) as i32;
+        let right=(cx+(365.*self.sample_scale-cx)*sx).ceil().min(self.rw as f32) as i32;
+        let top=(cy+(14.*self.sample_scale-cy)*sy+rise).floor().max(0.) as i32;
+        let bottom=(cy+(98.*self.sample_scale-cy)*sy+rise).ceil().min(self.rh as f32) as i32;
+        for y in top..bottom {
+            let py=(y as f32+0.5-cy-rise)/sy+cy-0.5;
+            if py<0. || py>=self.rh as f32-1. {continue;}
+            let y0=py.floor() as i32;let fy=py-y0 as f32;
+            for x in left..right {
+                let px=(x as f32+0.5-cx)/sx+cx-0.5;
+                if px<0. || px>=self.rw as f32-1. {continue;}
+                let x0=px.floor() as i32;let fx=px-x0 as f32;
+                let index=(y0*self.rw+x0) as usize;
+                let pixels=[self.content[index],self.content[index+1],self.content[index+self.rw as usize],self.content[index+self.rw as usize+1]];
+                let weights=[(1.-fx)*(1.-fy),fx*(1.-fy),(1.-fx)*fy,fx*fy];
+                let mut gray=0.;let mut alpha=0.;
+                for i in 0..4 {gray+=(pixels[i]&255) as f32*weights[i];alpha+=(pixels[i]>>24) as f32*weights[i];}
+                if alpha>0. {
+                    let destination=(y*self.rw+x) as usize;
+                    self.frame[destination]=blend_content(self.frame[destination],gray,alpha,opacity);
+                }
+            }
+        }
     }
     fn write_dimensions(&self) {
         let value=format!("{{\"width\":{},\"height\":{},\"logical_width\":{},\"logical_height\":{},\"supersampling\":2,\"dpi\":{}}}",self.width,self.height,self.logical_width,self.logical_height,self.dpi);
@@ -265,24 +322,37 @@ impl Display {
         if !self.visible { SetWindowPos(self.hwnd,std::ptr::null_mut(),work.left+(work.right-work.left)/2,work.bottom-80,0,0,SWP_NOSIZE|SWP_NOZORDER|SWP_NOACTIVATE); }
         self.configure(GetDpiForWindow(self.hwnd).max(96));
         self.origin=(work.left+(work.right-work.left-self.width)/2,work.bottom-self.height-(22.*self.dpi as f32/96.).round() as i32);
-        if !self.visible||self.closing { self.animation=Instant::now();self.last_frame=Instant::now();self.visible=true;self.closing=false;self.selected_position=self.selected as f32; }
+        if !self.visible||self.closing {
+            self.transition_panel=if self.visible {self.panel_progress}else{0.};
+            self.transition_content=if self.visible {self.content_progress}else{0.};
+            self.animation=Instant::now();self.last_frame=Instant::now();self.visible=true;self.closing=false;self.selected_position=self.selected as f32;
+        }
         self.animate();
     }
     pub unsafe fn redraw(&self) {}
-    pub unsafe fn hide(&mut self) { if self.visible&&!self.closing { self.closing=true;self.animation=Instant::now(); } }
+    pub unsafe fn hide(&mut self) { if self.visible&&!self.closing {
+        self.transition_panel=self.panel_progress;self.transition_content=self.content_progress;
+        self.closing=true;self.animation=Instant::now();
+    } }
     pub fn is_visible(&self)->bool { self.visible }
     pub unsafe fn animate(&mut self) {
         if !self.visible||self.pixels.is_null() { return; }
         let now=Instant::now();let dt=now.duration_since(self.last_frame).as_secs_f32().min(0.05);self.last_frame=now;
         let age=self.animation.elapsed().as_secs_f32();let t=(age/if self.closing {0.34}else{0.42}).min(1.);
         if self.closing&&t>=1. { ShowWindow(self.hwnd,SW_HIDE);self.visible=false;return; }
-        let progress=if self.closing {1.-smooth(t)}else{1.-(1.-t).powi(3)};
+        let progress=if self.closing {self.transition_panel*(1.-smooth(t))}
+            else {self.transition_panel+(1.-self.transition_panel)*(1.-(1.-t).powi(3))};
+        self.panel_progress=progress;
+        self.content_progress=content_phase(age,self.closing,self.transition_content);
         let cue_age=self.cue_at.elapsed().as_secs_f32();
         let phase=(cue_age*0.36).fract();
         let profile=|position:f32| { let d=position-phase; let d=if d<0. {d+1.}else{d};self.shine[((d*PROFILE as f32) as usize).min(PROFILE-1)] };
         let hw=15.+(self.logical_width as f32/2.-16.)*progress;let hh=self.logical_height as f32/2.-1.;let radius=hw.min(if self.picker {28.}else{hh});
         if progress<0.999 {
-            for y in 0..self.rh { for x in 0..self.rw {
+            self.frame.fill(0);
+            let left=((self.logical_width as f32/2.-hw-1.)*self.sample_scale).floor().max(0.) as i32;
+            let right=((self.logical_width as f32/2.+hw+1.)*self.sample_scale).ceil().min(self.rw as f32) as i32;
+            for y in 0..self.rh { for x in left..right {
                 let px=(x as f32+0.5)/self.sample_scale-self.logical_width as f32/2.;let py=(y as f32+0.5)/self.sample_scale-self.logical_height as f32/2.;
                 let distance=capsule_distance(px,py,hw,hh,radius);let index=(y*self.rw+x) as usize;
                 let mut pixel=self.body_pixel(index,distance);
@@ -305,7 +375,9 @@ impl Display {
         // across the handoff instead of switching between max(intro, microphone).
         let handoff=smooth((cue_age-0.12)/0.85);
         let settle=1.-(-dt/0.085).exp();
-        if self.picker {self.render_options(cue_age,dt);} else {
+        if self.picker {
+            if self.content_progress>0. {self.render_options(cue_age,dt);self.composite_options();}
+        } else {
         for i in 0..20 {
             let center_distance=((i as f32-9.5)/9.5).abs();let reveal=smooth((progress-center_distance*0.42)/0.58);
             let ripple=(cue_age*6.-center_distance*3.).sin()*0.5+0.5;
@@ -355,3 +427,48 @@ impl Display {
     pub unsafe fn paint(&self) {let mut ps:PAINTSTRUCT=zeroed();BeginPaint(self.hwnd,&mut ps);EndPaint(self.hwnd,&ps);}
 }
 impl Drop for Display {fn drop(&mut self){unsafe{SelectObject(self.dc,self.old_bitmap);DeleteObject(self.bitmap);DeleteDC(self.dc);}}}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rounded_geometry_fast_path_matches_distance_formula() {
+        for radius in [1.3,18.,28.] {
+            for x in -200..201 {for y in -60..61 {
+                let qx=(x as f32).abs()-(190.-radius);
+                let qy=(y as f32).abs()-(55.-radius);
+                let expected=(qx.max(0.).powi(2)+qy.max(0.).powi(2)).sqrt()+qx.max(qy).min(0.)-radius;
+                assert!((capsule_distance(x as f32,y as f32,190.,55.,radius)-expected).abs()<0.0001);
+            }}
+        }
+    }
+
+    #[test]
+    fn picker_content_settles_and_disappears_before_shell_closes() {
+        assert_eq!(content_phase(0.,false,0.),0.);
+        assert_eq!(content_phase(0.055,false,0.),0.);
+        assert_eq!(content_phase(0.42,false,0.),1.);
+        assert_eq!(content_phase(0.20,true,1.),0.);
+        let mut previous=0.;
+        for frame in 0..43 {
+            let current=content_phase(frame as f32/100.,false,0.);
+            assert!(current>=previous);previous=current;
+        }
+        // Toggling during entry continues from the visible content opacity.
+        let interrupted=content_phase(0.13,false,0.);
+        assert_eq!(content_phase(0.,true,interrupted),interrupted);
+        let reversing=content_phase(0.06,true,interrupted);
+        assert_eq!(content_phase(0.,false,reversing),reversing);
+    }
+
+    #[test]
+    fn moving_content_blends_premultiplied_alpha() {
+        let background=premultiplied(30.,0.8);
+        assert_eq!(blend_content(background,100.,128.,0.),background);
+        assert_eq!(blend_content(background,255.,255.,1.),0xffffffff);
+        let faded=blend_content(0,100.,128.,0.5);
+        assert_eq!(faded&255,50);
+        assert_eq!(faded>>24,64);
+    }
+}
