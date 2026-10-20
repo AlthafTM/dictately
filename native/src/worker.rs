@@ -3,8 +3,24 @@ use std::{fs::OpenOptions, io::{BufRead, BufReader, Write}, os::windows::{io::As
 use serde_json::{json, Value};
 use windows_sys::Win32::{Foundation::{CloseHandle, HANDLE}, System::JobObjects::*};
 
-pub enum Work { Request(u64, Value), Unload }
+pub enum Work { Request(u64, Value, Option<Vec<i16>>), Unload }
 pub struct Event { pub session: u64, pub value: Value }
+
+fn write_request(output: &mut impl Write, metadata: &Value, samples: Option<&[i16]>) -> Result<(), String> {
+    let mut header = metadata.clone();
+    if let Some(samples) = samples {
+        header["audio_format"] = json!("s16le");
+        header["audio_samples"] = json!(samples.len());
+    }
+    serde_json::to_writer(&mut *output, &header).map_err(|e| e.to_string())?;
+    output.write_all(b"\n").map_err(|e| e.to_string())?;
+    if let Some(samples) = samples {
+        // Encode on the worker thread; the UI only copies its contiguous i16 buffer.
+        let bytes: Vec<u8> = samples.iter().flat_map(|sample| sample.to_le_bytes()).collect();
+        output.write_all(&bytes).map_err(|e| e.to_string())?;
+    }
+    output.flush().map_err(|e| e.to_string())
+}
 
 struct Process { child: Child, input: ChildStdin, output: BufReader<ChildStdout>, job: HANDLE }
 impl Process {
@@ -27,9 +43,8 @@ impl Process {
             Ok(Self { input: child.stdin.take().unwrap(), output: BufReader::new(child.stdout.take().unwrap()), child, job })
         }
     }
-    fn request(&mut self, value: &Value) -> Result<Value, String> {
-        serde_json::to_writer(&mut self.input, value).map_err(|e| e.to_string())?;
-        self.input.write_all(b"\n").and_then(|_| self.input.flush()).map_err(|e| e.to_string())?;
+    fn request(&mut self, value: &Value, samples: Option<&[i16]>) -> Result<Value, String> {
+        write_request(&mut self.input, value, samples)?;
         let mut line = String::new();
         if self.output.read_line(&mut line).map_err(|e| e.to_string())? == 0 {
             return Err("Speech worker stopped; try F12 again".into());
@@ -52,10 +67,10 @@ pub fn start(root: PathBuf, data: PathBuf) -> (Sender<Work>, Receiver<Event>) {
         while let Ok(work) = rx.recv() {
             match work {
                 Work::Unload => { process = None; }
-                Work::Request(session, request) => {
+                Work::Request(session, request, samples) => {
                     let result = (|| {
                         if process.is_none() { process = Some(Process::start(&root, &data)?); }
-                        process.as_mut().unwrap().request(&request)
+                        process.as_mut().unwrap().request(&request, samples.as_deref())
                     })();
                     let value = match result { Ok(value) => value, Err(error) => { process = None; json!({"type":"error", "error":error}) } };
                     if results.send(Event { session, value }).is_err() { break; }
@@ -64,4 +79,22 @@ pub fn start(root: PathBuf, data: PathBuf) -> (Sender<Work>, Receiver<Event>) {
         }
     });
     (tx, events)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn audio_frame_is_little_endian_and_control_frames_have_no_payload() {
+        let mut frame = Vec::new();
+        write_request(&mut frame, &json!({"command":"recognize","id":7}), Some(&[-32768, -1, 0, 10, 32767])).unwrap();
+        let boundary = frame.iter().position(|byte| *byte == b'\n').unwrap();
+        let header: Value = serde_json::from_slice(&frame[..boundary]).unwrap();
+        assert_eq!(header["audio_samples"], 5);
+        assert_eq!(header["audio_format"], "s16le");
+        assert_eq!(&frame[boundary+1..], &[0,128,255,255,0,0,10,0,255,127]);
+        frame.clear();
+        write_request(&mut frame, &json!({"command":"prepare"}), None).unwrap();
+        assert_eq!(frame, b"{\"command\":\"prepare\"}\n");
+    }
 }

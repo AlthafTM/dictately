@@ -6,13 +6,17 @@
 
 **Local voice typing for Windows — press F12, speak, and type into the app you are using**
 
-Transcribr turns English or Indonesian speech into text in your focused text box. Recognition runs locally on your computer using Whisper large-v3-turbo by default. There is no account, subscription, or paid transcription API, and your speech is not sent to a cloud transcription service. After the initial downloads, dictation works offline. A small animated waveform near the bottom of the screen shows when recording is active.
+Transcribr turns **English** or **Indonesian** speech into text in your focused text box. Recognition runs locally on your computer using Whisper large-v3-turbo by default. There is no account, subscription, or paid transcription API, and your speech is not sent to a cloud transcription service. After the initial downloads, dictation works offline. A small animated waveform near the bottom of the screen shows when recording is active.
+
+**Currently supported languages: English and Indonesian**. Additional language support may be added in the future; it is not available yet and has no scheduled release date.
 
 [Installation](#download-and-install) · [Usage](#how-to-use) · [Local AI model options](docs/AI-MODELS.md) · [Releases](https://github.com/AlthafTM/transcribr/releases)
 
+See the [Wispr Flow comparison and optimization report](docs/WISPR-FLOW-COMPARISON.md) for current gaps, measured transport improvements, and suggested next work.
+
 ## Features
 
-- **English or Indonesian** — select one language in the Windows notification-area menu; it stays fixed for the recording
+- **English** or **Indonesian** — select one language in the Windows notification-area menu; it stays fixed for the recording
 - **Voice typing across apps** — dictate into supported browser, messaging, document, and other editable fields
 - **Live phrase output** — text arrives in short phrases while speaking; pauses and stopping finish the remaining words
 - **Spoken corrections** — repeat a recent sentence with a small change to replace it, or say `Correction, Tuesday` / `Ralat, Selasa` to correct the last dictated word

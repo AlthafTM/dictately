@@ -148,28 +148,28 @@ impl App {
         SetTimer(self.display.hwnd, 1, 16, None);
         self.timer_interval = 16;
         self.inflight = true;
-        let _ = self.requests.send(worker::Work::Request(self.session, json!({"command":"prepare", "id":0, "cleanup":self.settings.cleanup})));
+        let _ = self.requests.send(worker::Work::Request(self.session, json!({"command":"prepare", "id":0, "cleanup":self.settings.cleanup}), None));
         self.last_work = Instant::now(); self.worker_loaded = true; self.status("recording"); self.log("Recording started");
     }
     fn collect_audio(&mut self) {
         let mut level = 0.;
-        let incoming = if let Some(capture) = &mut self.capture { level = capture.level(); capture.take() }
+        let incoming = if let Some(capture) = &mut self.capture { level = capture.level(); capture.take_into(&mut self.buffer) }
         else if self.recording {
             if let Some(samples) = &self.test_samples {
                 let end = ((self.started.elapsed().as_secs_f32() * 16000.) as usize).min(samples.len());
-                let result = samples[self.test_offset..end].to_vec(); self.test_offset = end;
+                let result = &samples[self.test_offset..end]; self.test_offset = end;
                 if !result.is_empty() { level = (result.iter().map(|s| (*s as f32 / 32768.).powi(2)).sum::<f32>() / result.len() as f32).sqrt(); }
-                result
-            } else { Vec::new() }
-        } else { Vec::new() };
+                self.buffer.extend_from_slice(result); result.len()
+            } else { 0 }
+        } else { 0 };
         if level > 0.0025 { self.last_voice = Instant::now(); }
-        self.display.amplitude(level); self.total_samples += incoming.len(); self.buffer.extend(incoming);
+        self.display.amplitude(level); self.total_samples += incoming;
     }
     unsafe fn stop(&mut self, cancel: bool) {
         if !self.recording { return; }
         self.collect_audio();
         if let Some(mut capture) = self.capture.take() {
-            capture.stop(); let tail = capture.take(); self.total_samples += tail.len(); self.buffer.extend(tail);
+            capture.stop(); self.total_samples += capture.take_into(&mut self.buffer);
         }
         self.recording = false; RECORDING.store(false, Ordering::Relaxed);
         self.tray.hIcon = self.icon; Shell_NotifyIconW(NIM_MODIFY, &self.tray); self.display.recording = false;
@@ -198,14 +198,14 @@ impl App {
         let lookahead = if self.last_voice.elapsed() > Duration::from_millis(650) { 0.15 } else { 0.8 };
         let cutoff = len as f32 / 16000. - if final_chunk { 0. } else { lookahead };
         self.request_id += 1;
-        let request = json!({"command":"recognize", "id":self.request_id, "samples":self.buffer,
+        let request = json!({"command":"recognize", "id":self.request_id,
             "final":final_chunk, "flush":paused || self.buffer.len() >= 16000*18, "commit_before":cutoff.max(0.), "language":self.settings.language,
             "at_pause":self.last_voice.elapsed() > Duration::from_millis(650),
             "skip_before":self.skip_samples as f32 / 16000.,
             "vocabulary":self.settings.vocabulary, "cleanup":self.settings.cleanup, "accuracy":self.settings.accuracy,
             "previous_text": self.raw.chars().rev().take(160).collect::<String>().chars().rev().collect::<String>()});
         self.inflight = true; self.last_sent_len = len; self.last_request = Instant::now();
-        let _ = self.requests.send(worker::Work::Request(self.session, request));
+        let _ = self.requests.send(worker::Work::Request(self.session, request, Some(self.buffer.clone())));
     }
     unsafe fn receive(&mut self, event: worker::Event) {
         if event.session != self.session { return; }
@@ -500,7 +500,7 @@ fn main() {
         if mouse_hook.is_null() {UnhookWindowsHookEx(hook);app.log("Input destination tracking failed");app.status("error");return;}
         // Warm the local models without opening the microphone or showing a popup.
         app.worker_loaded = true; app.inflight = true;
-        let _ = app.requests.send(worker::Work::Request(0, json!({"command":"prepare", "id":0, "cleanup":app.settings.cleanup})));
+        let _ = app.requests.send(worker::Work::Request(0, json!({"command":"prepare", "id":0, "cleanup":app.settings.cleanup}), None));
         app.status("ready"); app.log("Native Rust controller ready"); SetTimer(hwnd, 1, 1000, None);
         let mut message: MSG = std::mem::zeroed();
         while GetMessageW(&mut message, std::ptr::null_mut(), 0, 0) > 0 { TranslateMessage(&message); DispatchMessageW(&message); }

@@ -18,7 +18,8 @@ foreach ($name in @('transcribr.ico','transcribr.png','speech-model.json')) {
 Copy-Item -LiteralPath "$PSScriptRoot\licenses\faster-whisper-LICENSE" -Destination "$stage\licenses"
 Copy-Item -LiteralPath "$PSScriptRoot\docs\DEVELOPMENT.md" -Destination "$stage\docs"
 Copy-Item -LiteralPath "$PSScriptRoot\docs\AI-MODELS.md" -Destination "$stage\docs"
-foreach ($name in @('speech_models.py','select_model.py')) {
+Copy-Item -LiteralPath "$PSScriptRoot\docs\WISPR-FLOW-COMPARISON.md" -Destination "$stage\docs"
+foreach ($name in @('speech_models.py','select_model.py','worker_protocol.py')) {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $stage
 }
 $archive = Join-Path $PSScriptRoot "dist\Transcribr-$version-windows-x64.zip"

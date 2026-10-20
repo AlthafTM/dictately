@@ -1,7 +1,8 @@
 """On-demand offline inference worker for the native Rust controller.
 
-Only the main thread touches inference. stdin/stdout are JSON lines; diagnostics
-go to stderr. This process never captures the microphone or inserts keystrokes.
+Only the main thread touches inference. stdin uses JSON headers plus PCM frames;
+stdout uses JSON lines. Diagnostics go to stderr. This process never captures
+the microphone or inserts keystrokes.
 """
 from __future__ import annotations
 import json
@@ -30,6 +31,7 @@ sys.stdout.reconfigure(encoding="utf-8")
 sys.stdin.reconfigure(encoding="utf-8")
 from engine import Engine
 from speech_models import selected_model
+from worker_protocol import read_request
 
 LANGUAGES = {"en", "id"}
 
@@ -166,9 +168,10 @@ class Worker:
             self.prepare()
             return {"type": "ready", "id": request.get("id", 0), "device": self.device, "model":self.model_name}
         self.prepare()
-        audio = np.asarray(request["samples"], dtype=np.float32) / 32768.0
+        audio = np.array(request["samples"], dtype=np.float32, copy=True)
+        audio *= 1.0 / 32768.0
         final = request.get("final", False)
-        if len(audio) < 3200 or float(np.sqrt(np.mean(audio * audio))) < .0005:
+        if len(audio) < 3200 or float(np.sqrt(np.dot(audio, audio) / len(audio))) < .0005:
             return {"type": "result", "id": request["id"], "raw": "", "cleaned": "", "preview": "",
                 "consumed": len(audio) if final else max(0, len(audio)-4800), "language": locked_language(request.get("language")), "seconds": 0}
         model = self.engine.whisper
@@ -221,8 +224,10 @@ class Worker:
 def main():
     worker = Worker()
     try:
-        for line in sys.stdin:
-            request = json.loads(line)
+        while True:
+            request = read_request(sys.stdin.buffer)
+            if request is None:
+                break
             try:
                 if request.get("command") == "quit":
                     break

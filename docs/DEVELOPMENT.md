@@ -45,3 +45,7 @@ To package a release:
 The archive contains the Windows executable, Python worker/settings sources, setup script, icon, pinned model manifest, and notices. It excludes the private Python environment, model weights, local logs, and history. Setup downloads dependencies and weights on the recipient's computer. Test release installation in a fresh extracted directory before publishing a release.
 
 Runtime code retains the `LOCALFLOW_DATA` environment override for isolated developer tests. Normal installations use `%LOCALAPPDATA%\Transcribr`. Old experimental Python UI and generative-cleanup tools on the development machine are not distributed or used by the native app.
+
+Worker transport uses newline-terminated JSON control headers. Recognition headers specify `audio_format: "s16le"` and `audio_samples`; exactly twice that count of PCM bytes follows immediately. Responses remain JSON lines. Use binary stdin reads so newline bytes inside PCM cannot desynchronize frames. Legacy JSON requests with `samples` remain accepted for development tools. Update the native controller and Python worker together when changing the protocol.
+
+Run the receive/parsing microbenchmark with `.\.venv\Scripts\python.exe tests/benchmark_transport.py`. Its timings exclude inference and editor insertion; see the [comparison and optimization report](WISPR-FLOW-COMPARISON.md) for methodology and practical limits.

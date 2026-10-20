@@ -82,6 +82,17 @@ impl Capture {
         result
     }
 
+    pub fn take_into(&mut self, destination: &mut Vec<i16>) -> usize {
+        self.shared.samples.lock().map(|mut samples| {
+            let count = samples.len();
+            destination.extend_from_slice(&samples);
+            // Retain the capture allocation between callbacks instead of taking
+            // its Vec and forcing the next microphone block to allocate again.
+            samples.clear();
+            count
+        }).unwrap_or(0)
+    }
+
     pub fn stop(&mut self) {
         if self.shared.running.load(Ordering::Relaxed) {
             self.pump_running.store(false, Ordering::Release);
