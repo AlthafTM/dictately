@@ -122,8 +122,8 @@ impl App {
     }
     unsafe fn new(root: PathBuf, data: PathBuf, hwnd: HWND, test_samples: Option<Vec<i16>>) -> Self {
         let (requests, responses) = worker::start(root.clone(), data.clone());
-        let icon = LoadImageW(std::ptr::null_mut(), wide(&root.join("assets/dictately.ico").to_string_lossy()).as_ptr(), IMAGE_ICON, 32, 32, LR_LOADFROMFILE) as HICON;
-        let record_icon = LoadImageW(std::ptr::null_mut(), wide(&root.join("assets/dictately.ico").to_string_lossy()).as_ptr(), IMAGE_ICON, 32, 32, LR_LOADFROMFILE) as HICON;
+        let icon = LoadImageW(std::ptr::null_mut(), wide(&root.join("assets/dictately-tray.ico").to_string_lossy()).as_ptr(), IMAGE_ICON, 32, 32, LR_LOADFROMFILE) as HICON;
+        let record_icon = LoadImageW(std::ptr::null_mut(), wide(&root.join("assets/dictately-tray.ico").to_string_lossy()).as_ptr(), IMAGE_ICON, 32, 32, LR_LOADFROMFILE) as HICON;
         let mut tray: NOTIFYICONDATAW = std::mem::zeroed();
         tray.cbSize = std::mem::size_of_val(&tray) as u32; tray.hWnd = hwnd; tray.uID = 1;
         tray.uFlags = NIF_ICON | NIF_TIP | NIF_MESSAGE; tray.hIcon = icon; tray.uCallbackMessage = TRAY;

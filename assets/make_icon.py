@@ -42,3 +42,15 @@ image.paste(wave,(0,0),bars)
 image.putalpha(outer)
 image.save(root/'dictately.ico',sizes=[(16,16),(20,20),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])
 image.resize((512,512),Image.Resampling.LANCZOS).save(root/'dictately.png')
+
+# The notification area gets only a larger, crisp waveform, without the frame.
+cropped=bars.crop(bars.getbbox())
+tray_height=960
+tray_width=round(cropped.width*tray_height/cropped.height)
+tray_mask=Image.new('L',(size,size))
+tray_mask.paste(cropped.resize((tray_width,tray_height),Image.Resampling.LANCZOS),
+                ((size-tray_width)//2,(size-tray_height)//2))
+tray=wave.copy()
+tray.putalpha(tray_mask)
+tray.save(root/'dictately-tray.ico',sizes=[(16,16),(20,20),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])
+tray.resize((512,512),Image.Resampling.LANCZOS).save(root/'dictately-tray.png')

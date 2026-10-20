@@ -20,6 +20,8 @@
   "THIRD_PARTY.md",
   "assets/dictately.ico",
   "assets/dictately.png",
+  "assets/dictately-tray.ico",
+  "assets/dictately-tray.png",
   "assets/speech-model.json",
   "licenses/faster-whisper-LICENSE",
   "docs/DEVELOPMENT.md",

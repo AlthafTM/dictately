@@ -234,7 +234,7 @@ def run_desktop(smoke=False, probe=None):
             self.buffer = PhraseBuffer(); self.transcript = ''; self.started = 0.; self.last_request = 0.
             self.last_toggle = 0.; self.level = 0.; self.last_audio = 0.; self.last_voice = 0.; self.last_injected = ''
             self.window = Waveform(); self.history_dialog = None
-            self.tray = QSystemTrayIcon(QIcon(str(ROOT / "assets/dictately.png")), app)
+            self.tray = QSystemTrayIcon(QIcon(str(ROOT / "assets/dictately-tray.png")), app)
             self.tray.setToolTip("Dictately · F12 to dictate")
             self.menu = QMenu(); self.group = QActionGroup(self.menu); self.group.setExclusive(True)
             for title, language in [('English only','en'),('Indonesian only','id')]:

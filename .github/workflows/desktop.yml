@@ -49,6 +49,7 @@ jobs:
             launchers/macos/
             scripts/desktop/
             assets/dictately.png
+            assets/dictately-tray.png
             docs/MACOS-LINUX.md
             LICENSE
             THIRD_PARTY.md
