@@ -10,14 +10,14 @@ The updated Rust renderer prewarms both layouts, retains their graphics resource
 
 | Local measurement | 0.9 baseline | Updated renderer |
 | --- | ---: | ---: |
-| Median shortcut release to visible picker | 102.5 ms | 4.5 ms |
+| Median shortcut release to window-visible flag | 102.5 ms | 4.5 ms |
 | First opening in the measured process | 73.3 ms | 3.1 ms |
 | p95 transition frame interval | 24.1 ms | 17.1 ms |
 | p95 frame rendering/submission work | 24.0 ms | 8.2 ms |
 | Maximum measured frame rendering/submission work | 36.7 ms | 15.6 ms |
 | Native private memory while idle, without speech worker | 5.9 MiB | 28.0 MiB |
 
-The measured median opening latency decreased by about **96%**. The memory increase of about **22 MiB** is the fixed graphics cache: this is a deliberate speed/memory tradeoff, with one-time prewarming at startup. It is separate from speech-model memory. Graphics-object counts remained bounded across repeated switches. These are submitted-frame and visibility measurements, not measured monitor presentation times or a promise that every frame meets its deadline under load.
+The measured median activation latency decreased by about **96%**. This measures Win32's window-visible flag; the first nontransparent pixels follow the animation frame clock. The memory increase of about **22 MiB** is the fixed graphics cache: this is a deliberate speed/memory tradeoff, with one-time prewarming at startup. It is separate from speech-model memory. Graphics-object counts remained bounded across repeated switches. These are submitted-frame and visibility measurements, not measured monitor presentation times or a promise that every frame meets its deadline under load.
 
 Method: the same laptop and display scaling, a preserved 0.9 executable, five picker openings per build, actual configurable-default language-shortcut events, and a waveform opening/closing between picker cycles. Synthetic silence prevents microphone capture, model loading, and text insertion. Timing uses a monotonic clock; native frame metrics are opt-in. Initial exploratory runs measured an 88 ms opening median; the table uses the repeat run with memory/resource checks. Background scheduling causes variation.
 

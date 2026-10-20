@@ -27,7 +27,7 @@ def main():
     baseline='--baseline' in sys.argv
     messages='--messages' in sys.argv
     exe=Path(sys.argv[sys.argv.index('--exe')+1]) if '--exe' in sys.argv else ROOT/'native/target/release/dictately.exe'
-    data=ROOT/'qa'/('picker-latency-'+uuid.uuid4().hex[:8]);data.mkdir()
+    data=ROOT/'qa'/('picker-latency-'+uuid.uuid4().hex[:8]);data.mkdir(parents=True)
     pcm=data/'silence.pcm';pcm.write_bytes(bytes(16000*2*30))
     frames=data/'frames.json'
     process=subprocess.Popen([str(exe),'--test-pcm',str(pcm),'--test-target','0','--test-no-warmup'],env=dict(os.environ,LOCALFLOW_DATA=str(data),DICTATELY_FRAME_METRICS=str(frames)),creationflags=subprocess.CREATE_NO_WINDOW)
