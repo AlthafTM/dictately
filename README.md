@@ -11,7 +11,7 @@
   <img src="assets/dictately.png" width="112" alt="Dictately waveform icon">
 </p>
 
-**Local live dictation with a clean, minimal UI.**
+**Local live dictation for Windows that turns your speech into text in the app you're using.**
 
 Dictately turns **English** and **Indonesian** speech into text in your focused text field. Recognition runs on your computer, with no account or subscription. After setup, dictation works offline.
 
@@ -31,13 +31,63 @@ More languages may be supported later.
 
 ## Download and install
 
-1. Download **`Dictately-<version>-Setup.exe`** from [the latest release](https://github.com/AlthafTM/dictately/releases/latest)
-2. Run setup, choose a folder, and optionally enable startup at sign-in
-3. Let setup download the speech model, then launch Dictately
-
 Requires **Windows 10/11 x64**, a microphone, and at least **8 GB free during setup**. An NVIDIA GPU is recommended; CPU mode is slower. The installer includes the runtime and is currently unsigned.
 
-[Manual installation and building from source](docs/USER-GUIDE.md#manual-zip-installation) · [macOS/Linux source setup (experimental)](docs/MACOS-LINUX.md)
+### Windows installer (recommended)
+
+1. Open [the latest release](https://github.com/AlthafTM/dictately/releases/latest) and download **`Dictately-<version>-Setup.exe`** under **Assets**
+2. Run the installer and choose an installation folder
+3. Optionally enable **Start Dictately when I sign in to Windows**, then click **Install**
+4. Wait for setup to install the runtime and download the speech model (about **1.6 GB**)
+5. Open **Dictately** from the Start menu
+6. Choose a language, click your text field, and start dictation using your configured shortcut
+
+No separate Python or Rust installation is needed. If the download is interrupted, run setup again in the same folder to resume. Updates preserve your settings and history.
+
+### Manual ZIP installation
+
+1. If a Windows ZIP is provided in [Releases](https://github.com/AlthafTM/dictately/releases), download it and extract the entire archive to a permanent folder
+2. Install [Python 3.12 for Windows](https://www.python.org/downloads/windows/), including the Python launcher and Tcl/Tk
+3. Open PowerShell in the extracted folder and run one setup command:
+
+   ```powershell
+   # NVIDIA GPU
+   .\scripts\windows\setup.ps1 -Gpu
+
+   # CPU only
+   .\scripts\windows\setup.ps1
+   ```
+
+4. Wait for dependencies and the model to finish downloading
+5. Open **Dictately** from Start or double-click `launchers/windows/Start Dictately.vbs`
+
+To enable sign-in startup during setup, add `-StartWithWindows`. Keep the extracted folder in place.
+
+### Build from source
+
+1. Install **Python 3.12** with the launcher and Tcl/Tk, [Rust](https://rust-lang.org/tools/install/), and the [Windows C++ build tools / Windows SDK](https://learn.microsoft.com/en-us/windows/dev-environment/rust/setup)
+2. Clone the repository, or use **Code → Download ZIP** and extract it:
+
+   ```powershell
+   git clone https://github.com/AlthafTM/dictately.git
+   cd dictately
+   ```
+
+3. Open **Developer PowerShell for Visual Studio** in the project folder and run:
+
+   ```powershell
+   .\scripts\windows\setup.ps1 -Gpu
+   ```
+
+   Omit `-Gpu` for CPU-only setup. Setup builds the Rust controller and downloads dependencies and model weights.
+
+4. Launch **Dictately** from the Start menu
+
+For later source updates, quit Dictately, pull changes, and rerun setup with `-Rebuild`.
+
+### macOS and Linux
+
+Follow the [step-by-step source setup guide](docs/MACOS-LINUX.md). These versions are experimental; Linux requires X11.
 
 ## How to use
 
