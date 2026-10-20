@@ -1,0 +1,52 @@
+# Dependencies and downloaded model/runtime weights
+.venv/
+.tools/
+models/
+runtime*/
+node_modules/
+native/target/
+# Local recordings, QA output, profiles and personal transcripts
+qa/
+*.wav
+*.pcm
+*.bgra
+*.log
+history.json
+settings.json
+status.json
+.env
+.env.*
+!.env.example
+__pycache__/
+*.py[cod]
+# Build output and download archives
+dist/
+*.exe
+*.dll
+*.zip
+# Previous experiments remain on the development device only
+app.py
+badge.py
+benchmark*.json
+benchmark.py
+benchmark_speech.py
+cleanup-gpu.json
+*-verification.json
+verification.json
+test-pad-result.json
+llama-*.json
+download_models.py
+download_speech_upgrade.py
+install_gpu_cleanup.py
+RECOGNITION-NOTES.md
+requirements-lock.txt
+Start Transcriber.vbs
+Stop Transcriber.ps1
+assets/local-flow.ico
+assets/recording.ico
+assets/transcriber.ico
+assets/transcriber.png
+test_desktop.py
+test_engine.py
+test_accuracy.py
+test_streaming.py
