@@ -53,6 +53,13 @@ def x11_routing():
 def main():
     if '--x11' in sys.argv:
         x11_routing();return
+    if sys.platform=='darwin':
+        import AppKit
+        import ApplicationServices as ax
+        import Quartz
+        assert callable(ax.AXUIElementIsAttributeSettable)
+        assert callable(Quartz.CGPreflightListenEventAccess)
+        assert AppKit.NSWorkspace.sharedWorkspace() is not None
     with tempfile.TemporaryDirectory() as temporary:
         image=ROOT/'qa/desktop-waveform.png';image.parent.mkdir(exist_ok=True)
         env=dict(os.environ,LOCALFLOW_DATA=temporary,QT_QPA_PLATFORM='offscreen',TRANSCRIBR_SMOKE_IMAGE=str(image))

@@ -8,7 +8,7 @@ This frontend uses Python and Qt with the same recognition worker as Windows. Th
 
 | System | Status |
 | --- | --- |
-| macOS 12+ on Apple Silicon or Intel | Experimental source launcher; Python 3.12 required |
+| macOS 14+ on Apple Silicon or Intel | Experimental source launcher; Python 3.12 required; native checks use macOS 15 |
 | Linux x86-64 with X11/Xorg, such as Ubuntu 22.04/24.04 | Experimental source launcher; Python 3.12 and desktop libraries required |
 | Linux Wayland | Not supported; choose an X11/Xorg session |
 | Linux ARM, headless servers, Flatpak/Snap sandbox installation | Not validated |
@@ -42,7 +42,7 @@ The generated `.app` launches this source folder's private Python environment. K
 
    ```bash
    sudo apt update
-   sudo apt install python3.12 python3.12-venv libportaudio2 xdotool xclip libegl1 libopengl0 libxcb-util1 libxcb-cursor0 libxkbcommon-x11-0 libxcb-icccm4 libxcb-keysyms1 libxcb-image0 libxcb-render-util0 libxcb-xinerama0
+   sudo apt install python3.12 python3.12-venv python3.12-dev build-essential libportaudio2 xdotool xclip libegl1 libopengl0 libxcb-util1 libxcb-shape0 libxcb-cursor0 libxkbcommon-x11-0 libxcb-icccm4 libxcb-keysyms1 libxcb-image0 libxcb-render-util0 libxcb-xinerama0
    ```
 
    Ubuntu 22.04 does not include Python 3.12 by default: install it with your preferred Python version manager, or use Ubuntu 24.04. Other distributions have different package names. Setup does not add package repositories or require running Transcribr as root
