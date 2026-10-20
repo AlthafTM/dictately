@@ -8,7 +8,22 @@ Transcribr already provides the core local dictation loop: F12, microphone captu
 
 We cannot honestly give a percentage accuracy gap against Flow: neither product has been tested on the same recordings in this project. Faster transport improves efficiency; it does not make the speech model recognize words more accurately.
 
-## Feature gaps
+## At a glance: our strengths and weaknesses
+
+| Classification | What this means for a Transcribr user |
+| --- | --- |
+| **Our strength: local and offline** | Recognition stays on your device after setup, including when the internet is unavailable; Flow processes dictation audio in the cloud. [Flow security overview](https://docs.wisprflow.ai/articles/3467817258-security-and-compliance-faq) |
+| **Our strength: no transcription subscription** | No account, API key, or usage-based transcription bill is required by Transcribr; you supply the hardware and electricity |
+| **Our strength: local model control** | Choose compatible Small, Turbo, or Large-v3 weights, inspect the code, and keep models/history under your own control |
+| **Our weakness: less understanding of context** | Names, writing style, and surrounding text do not receive Flow's contextual assistance; vocabulary hints are largely manual. [Context Awareness](https://docs.wisprflow.ai/articles/4678293671-feature-context-awareness) |
+| **Our weakness: less capable editing** | Basic cleanup and recent-suffix correction do not match general voice editing, richer formatting, snippets, or automatic dictionary learning; details and sources appear below |
+| **Our weakness: narrower support and rougher setup** | Only **English** / **Indonesian**, Windows x64, and a Python/setup workflow; no mobile app, signed installer, updater, or GUI model selector |
+| **Our tradeoff: your device does the work** | Offline operation moves inference cost onto your CPU/GPU; model loading, memory pressure, battery use, and phrase delay still matter |
+| **Not established: accuracy or speed superiority** | No matched real-speech benchmark against Flow exists here. Feature differences and synthetic tests do not prove which app recognizes your voice better |
+
+Choose Transcribr when local processing and control matter most. Expect Flow to offer more of the documented editing/personalization ecosystem. Treat recognition quality on your own speech as something to measure, rather than assume.
+
+## Our weaknesses compared with Wispr Flow
 
 | Area | Transcribr today | What Flow offers / what is missing |
 | --- | --- | --- |
@@ -25,7 +40,7 @@ We cannot honestly give a percentage accuracy gap against Flow: neither product 
 | Installation and maintenance | Python 3.12 plus setup script; source build also needs Rust/Windows build tools; model downloads are separate | Transcribr still needs a signed installer, clean-machine installation coverage, automatic update/rollback, and a GUI model selector before it feels like a polished consumer installation |
 | Reliability evidence | Unit tests, protocol tests, synthetic speech and disposable-editor tests; known browser/custom-editor variability | We lack a broad, versioned compatibility matrix and real-speech accuracy/latency suite. Flow also documents app, network, and language limitations; neither should be described as infallible. [Flow limitations](https://docs.wisprflow.ai/articles/4048537120-what-to-expect-from-flow-accuracy-and-known-limitations) |
 
-## Where Transcribr has a different advantage
+## Our strengths and their practical limits
 
 **Local/offline recognition:** after installation, audio is processed on your own device. Normal dictation does not save audio files. Flow's security documentation explicitly says it processes dictation audio in the cloud; privacy and retention controls do not turn cloud inference into offline inference. [Flow security overview](https://docs.wisprflow.ai/articles/3467817258-security-and-compliance-faq)
 
@@ -63,6 +78,23 @@ Reproduce from the app root:
 The protocol tests cover partial pipe reads, signed sample extremes, newline bytes within audio, consecutive frames, malformed counts, and truncated payloads. Native tests check the matching wire format. The frame reader bounds audio to 150 seconds; the regular UI still limits recording sessions to a maximum of 120 seconds.
 
 Validation in this update: **17 Python tests** and **6 native unit tests** passed; the desktop-only native unit test remains ignored in that default run. Two 18-second synthetic desktop dictations produced text while recording and left the second field untouched. Their reference-word recall was 100% and 98%, respectively; recall is not word error rate and these are not real-speaker accuracy results. A final short synthetic insertion check passed after the microphone-buffer change, and the real-microphone/overlay start-cancel lifecycle check passed. The quick 2.8-second phrase was inserted after recording ended, illustrating the remaining phrase-buffering delay.
+
+## F12 startup stutter: cause and fix
+
+Windows microphone open/start originally ran on the same thread as the overlay and low-level keyboard hook. On this laptop, it blocked that thread for roughly 0.5–1 second at recording start. This delayed the opening animation and made UI/hotkey handling unresponsive during the driver call.
+
+Microphone open/start/stop/close now runs on a dedicated audio-owner thread. F12 starts the visual cue immediately while the driver initializes. Session-tagged completions and a cancellation token prevent delayed or cancelled starts from attaching to a new session. Final transcription waits for the stop completion's remaining audio instead of discarding it.
+
+| Responsiveness check | Before, first start | After, first start | Before, second start | After, second start |
+| --- | ---: | ---: | ---: | ---: |
+| Overlay visible after toggle | 1,013.3 ms | 12.8 ms | 493.6 ms | 12.8 ms |
+| UI ping timeouts, 25 ms limit | 21 | 0 | 10 | 0 |
+
+Method: isolated controller, real Windows microphone, no text insertion, polling window responsiveness and visibility. The **after** run additionally injected a 600 ms microphone-start delay to verify that slow driver setup no longer freezes the UI. Its largest measured UI ping was 4.0 ms. These are two local runs, not universal latency guarantees or an audio/recognition benchmark.
+
+The microphone itself still needs initialization: it became ready after 1.13–1.55 seconds in that artificially delayed run. A fast visual cue does not mean hardware capture or the speech model is instant. The waveform receives real microphone levels once capture is ready; the idle app does not keep a microphone recording open.
+
+Validation also checked real sample collection, cancellation during a pending open, immediate restart without stale session binding, and normal stop/finalization. The default native suite now has **7 passing tests** and one ignored desktop-only test. The existing overlay lifecycle and short desktop dictation checks passed with this audio-thread change.
 
 ## Recommended next work, in priority order
 

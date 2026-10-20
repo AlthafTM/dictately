@@ -12,7 +12,7 @@ Transcribr turns **English** or **Indonesian** speech into text in your focused 
 
 [Installation](#download-and-install) · [Usage](#how-to-use) · [Local AI model options](docs/AI-MODELS.md) · [Releases](https://github.com/AlthafTM/transcribr/releases)
 
-See the [Wispr Flow comparison and optimization report](docs/WISPR-FLOW-COMPARISON.md) for current gaps, measured transport improvements, and suggested next work.
+See the [strengths, weaknesses, and Wispr Flow comparison report](docs/WISPR-FLOW-COMPARISON.md) for current tradeoffs, measured optimizations, and suggested next work.
 
 ## Features
 

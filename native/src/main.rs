@@ -43,7 +43,8 @@ struct App {
     editor_locked: bool, input_inflight: bool, finish_attempted: bool,
     recent: String, recent_at: Instant, correction_wait: bool, phrase_start: bool,
     requests: Sender<worker::Work>, responses: Receiver<worker::Event>,
-    capture: Option<audio::Capture>, recording: bool, finishing: bool, inflight: bool,
+    capture: Option<std::sync::Arc<audio::SharedAudio>>, microphone: audio::Microphone,
+    mic_starting: bool, mic_stopping: bool, recording: bool, finishing: bool, inflight: bool,
     session: u64, request_id: u64, buffer: Vec<i16>, total_samples: usize,
     last_sent_len: usize, skip_samples: usize, last_request: Instant, started: Instant, last_voice: Instant,
     last_work: Instant, last_insert: Instant, worker_loaded: bool, hide_at: Option<Instant>, timer_interval: u32,
@@ -65,7 +66,8 @@ impl App {
         let now = Instant::now();
         let mut app = Self { settings: Settings::load(&data), input: typing::InputWorker::new(), display: Display::new(hwnd), root, data,
             editor_locked: false, input_inflight: false, finish_attempted:false, recent: String::new(), recent_at: now, correction_wait: false, phrase_start: true,
-            requests, responses, capture: None, recording: false, finishing: false, inflight: false,
+            requests, responses, capture: None, microphone: audio::Microphone::new(), mic_starting:false, mic_stopping:false,
+            recording: false, finishing: false, inflight: false,
             session: 0, request_id: 0, buffer: Vec::new(), total_samples: 0, last_sent_len: 0, skip_samples: 0,
             last_request: now, started: now, last_voice: now, last_work: now, last_insert: now,
             worker_loaded: false, hide_at: None, timer_interval:1000, raw: String::new(), cleaned: String::new(), pending: String::new(),
@@ -88,7 +90,9 @@ impl App {
     fn status(&self, state: &str) {
         let value = json!({"pid": std::process::id(), "state": state, "version":"0.5.0", "speech_model":self.speech_model, "app":"Transcribr", "hwnd":self.display.hwnd as usize,
             "at_unix":unix(), "live_commits":self.inserted, "language":self.settings.language, "worker_loaded":self.worker_loaded,
-            "engine_ready":self.worker_loaded && !self.inflight, "editor_locked":self.editor_locked, "pending_characters":self.pending.chars().count()});
+            "engine_ready":self.worker_loaded && !self.inflight, "editor_locked":self.editor_locked, "pending_characters":self.pending.chars().count(),
+            "microphone_ready":self.capture.is_some() || self.test_samples.is_some(), "microphone_starting":self.mic_starting,
+            "microphone_stopping":self.mic_stopping, "audio_samples":self.total_samples});
         let _ = fs::write(self.data.join("status.json"), value.to_string());
     }
     unsafe fn notice(&mut self, title: &str, message: &str, seconds: u64) {
@@ -131,11 +135,12 @@ impl App {
         self.request_id = 0; self.buffer.clear(); self.raw.clear(); self.cleaned.clear();
         self.pending.clear(); self.inserted = 0; self.languages.clear(); self.total_samples = 0;
         self.test_offset = 0; self.last_sent_len = 0; self.skip_samples = 0; self.started = Instant::now(); self.last_voice = self.started;
-        if self.test_samples.is_none() {
-            match audio::Capture::start() {
-                Ok(capture) => self.capture = Some(capture),
-                Err(error) => { self.notice("Check your microphone", &error, 8); self.status("error"); return; }
-            }
+        self.capture = None; self.mic_starting = self.test_samples.is_none(); self.mic_stopping = false;
+        if self.mic_starting {
+            // Delay injection is restricted to the no-insertion QA mode.
+            let delay = if self.test_target == Some(0) { std::env::var("TRANSCRIBR_TEST_MIC_DELAY_MS").ok()
+                .and_then(|value|value.parse::<u64>().ok()).unwrap_or(0).min(2000) } else {0};
+            self.microphone.start(self.session, Duration::from_millis(delay));
         }
         self.recording = true; self.finishing = false; self.hide_at = None;
         RECORDING.store(true, Ordering::Relaxed); self.display.recording = true;
@@ -165,17 +170,48 @@ impl App {
         if level > 0.0025 { self.last_voice = Instant::now(); }
         self.display.amplitude(level); self.total_samples += incoming;
     }
+    unsafe fn receive_audio(&mut self) {
+        while let Some(event) = self.microphone.poll() {
+            match event {
+                audio::Event::Started(session, result) if session == self.session && self.recording => {
+                    self.mic_starting = false;
+                    match result {
+                        Ok(shared) => {
+                            self.capture = Some(shared);
+                            self.log(&format!("Microphone ready after {}ms; UI remained asynchronous", self.started.elapsed().as_millis()));
+                            self.status("recording");
+                        }
+                        Err(error) => {
+                            self.stop(true);
+                            self.notice("Check your microphone", &error, 8);
+                            self.status("error");
+                        }
+                    }
+                }
+                audio::Event::Stopped(session, tail) if session == self.session => {
+                    self.mic_stopping = false;
+                    if self.finishing { self.total_samples += tail.len(); self.buffer.extend(tail); }
+                    self.status(if self.finishing {"processing"} else {"ready"});
+                }
+                // Old open/close completions must never attach to a newer session.
+                _ => {}
+            }
+        }
+    }
     unsafe fn stop(&mut self, cancel: bool) {
         if !self.recording { return; }
         self.collect_audio();
-        if let Some(mut capture) = self.capture.take() {
-            capture.stop(); self.total_samples += capture.take_into(&mut self.buffer);
+        if self.test_samples.is_none() {
+            self.microphone.stop(self.session);
+            self.mic_stopping = true;
         }
+        self.capture = None; self.mic_starting = false;
         self.recording = false; RECORDING.store(false, Ordering::Relaxed);
         self.tray.hIcon = self.icon; Shell_NotifyIconW(NIM_MODIFY, &self.tray); self.display.recording = false;
         self.display.cue("Mic off");
         if cancel {
             self.session += 1; self.inflight = false; self.buffer.clear(); self.pending.clear(); self.finishing = false;
+            self.mic_stopping = false;
             self.input.invalidate(self.session);self.input_inflight=false;
             self.save_history(); self.notice("Dictation stopped", "Unfinished audio discarded. Earlier text stays in place.", 4);
             self.hide_at = Some(Instant::now() + Duration::from_millis(100)); self.update_tip();
@@ -187,7 +223,7 @@ impl App {
         self.status("processing"); self.dispatch();
     }
     unsafe fn dispatch(&mut self) {
-        if self.inflight { return; }
+        if self.inflight || self.mic_stopping { return; }
         if self.finishing && self.buffer.len() < 3200 { self.finish(); return; }
         if !self.recording && !self.finishing { return; }
         let final_chunk = self.finishing;
@@ -212,7 +248,7 @@ impl App {
         self.inflight = false; self.last_work = Instant::now();
         let value = event.value;
         match value["type"].as_str().unwrap_or("error") {
-            "ready" => { self.speech_model = value["model"].as_str().unwrap_or("unknown").into(); self.log(&format!("Inference ready: {} {}", value["device"], self.speech_model)); if self.recording { self.display.title = "Listening".into(); } self.status(if self.recording { "recording" } else { "ready" }); }
+            "ready" => { self.speech_model = value["model"].as_str().unwrap_or("unknown").into(); self.log(&format!("Inference ready: {} {}", value["device"], self.speech_model)); if self.recording { self.display.title = "Listening".into(); } self.status(if self.recording { "recording" } else if self.finishing {"processing"} else { "ready" }); }
             "result" => {
                 let consumed = value["consumed"].as_u64().unwrap_or(0) as usize;
                 let raw = value["raw"].as_str().unwrap_or("");
@@ -295,6 +331,9 @@ impl App {
         self.status(if self.recording {"recording"} else if self.finishing {"processing"} else {"ready"});
     }
     unsafe fn finish(&mut self) {
+        // A final recognition result can race the driver's stop completion.
+        // Keep finishing until all pre-stop samples have been collected.
+        if self.mic_stopping { return; }
         self.correction_wait=false;
         if self.input_inflight {
             if self.last_insert.elapsed()<Duration::from_secs(3) {return;}
@@ -321,6 +360,7 @@ impl App {
         if fs::write(&tmp, serde_json::to_vec_pretty(&rows).unwrap()).is_ok() { let _ = fs::rename(tmp, path); }
     }
     unsafe fn tick(&mut self) {
+        self.receive_audio();
         if self.recording {
             self.collect_audio();
             if self.last_insert.elapsed() >= Duration::from_millis(if self.editor_locked {120} else {500}) { self.try_insert(); }
