@@ -12,6 +12,8 @@ Transcribr turns **English** or **Indonesian** speech into text in your focused 
 
 [Installation](#download-and-install) · [Usage](#how-to-use) · [Local AI model options](docs/AI-MODELS.md) · [Releases](https://github.com/AlthafTM/transcribr/releases)
 
+**macOS and Linux:** an [experimental desktop frontend with its own launchers and step-by-step setup](docs/MACOS-LINUX.md) is available from source. It supports macOS (Apple Silicon/Intel) and Linux X11; Wayland is not supported. The installer below remains Windows-only.
+
 See the [strengths, weaknesses, and Wispr Flow comparison report](docs/WISPR-FLOW-COMPARISON.md) for current tradeoffs, measured optimizations, and suggested next work.
 
 ## Features

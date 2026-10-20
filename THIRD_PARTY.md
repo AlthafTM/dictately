@@ -16,6 +16,10 @@ Transcribr uses these independently licensed components. Source links are provid
 | Pillow | Development-only icon generation | HPND; [source](https://github.com/python-pillow/Pillow) |
 | Python | Private installer runtime | PSF license; bundled runtime notices in `licenses/runtime` |
 | PyInstaller | Build tooling and runtime bootloader | GPL with distribution exception; [license](https://pyinstaller.org/en/stable/license.html) |
+| Qt / PySide6 Essentials | Experimental macOS / Linux desktop UI | LGPL-3.0 / GPL / commercial options; [licensing](https://doc.qt.io/qtforpython-6/licenses.html) |
+| sounddevice / PortAudio | Experimental desktop microphone capture | MIT; [sounddevice](https://github.com/spatialaudio/python-sounddevice), [PortAudio](https://github.com/PortAudio/portaudio) |
+| pynput | Experimental desktop hotkeys | LGPL-3.0; [source](https://github.com/moses-palmer/pynput) |
+| PyObjC / python-xlib | macOS Accessibility / X11 integration | [PyObjC](https://github.com/ronaldoussoren/pyobjc), [python-xlib](https://github.com/python-xlib/python-xlib); installed package notices apply |
 
 Python packages install into the recipient's private environment with their own notices. GPU libraries and model weights are not included in the Git repository or release ZIP. No rights to third-party software are granted beyond their respective licenses.
 

@@ -14,6 +14,17 @@ def app_root():
     return Path(__file__).resolve().parent
 
 
+def user_data_dir():
+    """Keep platform data out of the application/source directory."""
+    if os.environ.get("LOCALFLOW_DATA"):
+        return Path(os.environ["LOCALFLOW_DATA"]).expanduser()
+    if sys.platform == "win32":
+        return Path(os.environ["LOCALAPPDATA"]) / "Transcribr"
+    if sys.platform == "darwin":
+        return Path.home() / "Library/Application Support/Transcribr"
+    return Path(os.environ.get("XDG_DATA_HOME", str(Path.home() / ".local/share"))) / "transcribr"
+
+
 _dll_handles = []
 
 

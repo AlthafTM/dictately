@@ -14,7 +14,7 @@ import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-from runtime_paths import app_root, configure_gpu_libraries
+from runtime_paths import app_root, configure_gpu_libraries, user_data_dir
 configure_gpu_libraries()
 
 if sys.stdout is not None:
@@ -107,8 +107,9 @@ def emit(value):
     print(json.dumps(value, ensure_ascii=True), flush=True)
 
 class Worker:
-    def __init__(self):
-        self.engine = Engine(Path(os.environ.get("LOCALFLOW_DATA", str(Path(os.environ["LOCALAPPDATA"]) / "Transcribr"))))
+    def __init__(self, model_root=None):
+        self.engine = Engine(user_data_dir())
+        self.model_root = Path(model_root) if model_root is not None else app_root()
         self.cleanup_warmed = False
         self.cleanup_future = None
         self.cleanup_pool = None
@@ -123,10 +124,10 @@ class Worker:
             from faster_whisper import WhisperModel
             import ctranslate2
             import numpy as np
-            model_dir = selected_model(app_root())
+            model_dir = selected_model(self.model_root)
             if os.environ.get("LOCALFLOW_MODEL") == "small":
                 model_dir = "whisper-small"
-            model_path = str(app_root() / "models" / model_dir)
+            model_path = str(self.model_root / "models" / model_dir)
             self.model_name = model_dir
             if not self.force_cpu and os.environ.get("LOCALFLOW_DEVICE") != "cpu" and ctranslate2.get_cuda_device_count() > 0:
                 try:
