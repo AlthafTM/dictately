@@ -1,3 +1,4 @@
+from _support import ROOT
 """Real native F12/live-insertion QA, isolated from the user's history and audio."""
 import ctypes as c
 from ctypes import wintypes as w
@@ -11,7 +12,7 @@ import sys
 import re
 from collections import Counter
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[1]
 QA = ROOT / "qa"
 QA.mkdir(exist_ok=True)
 u, g, k = c.WinDLL("user32", use_last_error=True), c.WinDLL("gdi32"), c.WinDLL("kernel32")

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
+cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.."
 
 case "$(uname -s)" in
   Darwin) ;;
@@ -28,9 +28,9 @@ fi
 "$python_bin" -c 'import sys; assert sys.version_info[:2] == (3, 12), "Python 3.12 is required"'
 "$python_bin" -m venv .venv-desktop
 .venv-desktop/bin/python -m pip install --upgrade pip
-.venv-desktop/bin/python -m pip install -r requirements-desktop.txt
+.venv-desktop/bin/python -m pip install -r requirements/desktop.txt
 model="${DICTATELY_MODEL:-small}"
-.venv-desktop/bin/python desktop_app.py --install-model "$model"
-.venv-desktop/bin/python desktop_app.py --install-launcher "$@"
+.venv-desktop/bin/python app/desktop_app.py --install-model "$model"
+.venv-desktop/bin/python app/desktop_app.py --install-launcher "$@"
 echo 'Setup complete. Launch Dictately from Applications / your application menu'
 echo 'Keep this folder in place. On macOS, grant Microphone, Accessibility and Input Monitoring permissions'

@@ -1,5 +1,5 @@
 $ErrorActionPreference = 'Stop'
-$taskRoot = $PSScriptRoot
+$taskRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $localCargo = Join-Path $taskRoot '.tools\cargo\bin\cargo.exe'
 if (Test-Path -LiteralPath $localCargo) {
     $env:CARGO_HOME = Join-Path $taskRoot '.tools\cargo'

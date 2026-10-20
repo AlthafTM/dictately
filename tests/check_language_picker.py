@@ -1,3 +1,4 @@
+from _support import ROOT
 """Owned-window Windows tests for picker routing, live rebinding and voice commands.
 
 Uses synthesized audio files, no microphone and no insertion into personal apps.
@@ -15,7 +16,6 @@ import uuid
 import wave
 
 ROOT=Path(__file__).resolve().parents[1]
-sys.path.insert(0,str(ROOT))
 from hotkeys import CAPTURE_EVENT
 
 user=c.WinDLL('user32',use_last_error=True);kernel=c.WinDLL('kernel32',use_last_error=True)

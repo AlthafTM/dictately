@@ -1,3 +1,4 @@
+from _support import ROOT
 import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -17,7 +18,7 @@ class ModelSelectionTests(unittest.TestCase):
             hub = MagicMock()
             hub.HfApi.return_value.model_info.return_value.sha = "specific-revision"
             hub.snapshot_download.side_effect = RuntimeError("Download interrupted")
-            with patch.object(select_model, "ROOT", root), patch("sys.argv", ["select_model.py", "large-v3"]), patch.dict("sys.modules", {"huggingface_hub": hub}):
+            with patch.object(select_model, "ROOT", root), patch("sys.argv", ["app/select_model.py", "large-v3"]), patch.dict("sys.modules", {"huggingface_hub": hub}):
                 with self.assertRaises(RuntimeError):
                     select_model.main()
                 self.assertEqual(json.loads(selection.read_text())["model"], "turbo")

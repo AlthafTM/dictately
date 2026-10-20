@@ -1,3 +1,4 @@
+from _support import ROOT
 import unittest
 from live_worker import locked_language, trim_overlap, needs_fragment_cleanup, Worker, better_decode, repair_vocabulary, quick_cleanup
 from types import SimpleNamespace

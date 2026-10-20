@@ -120,7 +120,7 @@ def desktop_entry(command, icon):
 def install_launchers(root, python, startup=False, home=None):
     root, python = Path(root).resolve(), Path(python).absolute()
     home = Path(home) if home else Path.home()
-    command = [str(python), str(root / "desktop_app.py")]
+    command = [str(python), str(root / "app/desktop_app.py")]
     if sys.platform == "darwin":
         bundle = home / "Applications/Dictately.app/Contents"
         executable = bundle / "MacOS/Dictately"

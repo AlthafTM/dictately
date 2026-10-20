@@ -4,6 +4,23 @@ Local voice typing in **English** or **Indonesian**, with F12, a compact animate
 
 This frontend uses Python and Qt with the same recognition worker as Windows. The Windows Rust controller and installer are unchanged. These are **source installations**, not standalone signed installers. Native automated checks run on GitHub-hosted Linux and macOS machines; real microphone permissions and everyday Mac/Linux apps still need user testing.
 
+## What the preview label means
+
+Both editions remain experimental until real-device dictation has been checked. Passing cloud checks gives evidence that specific paths work; it does not establish physical microphone compatibility or permission behavior on a user's machine. No VM, operating system image, model, or additional test software needs to be installed on the maintainer's Windows laptop for these checks.
+
+The [desktop workflow](https://github.com/AlthafTM/dictately/actions/workflows/desktop.yml) runs on Linux, Apple Silicon macOS, and Intel macOS. Its downloadable `validation-*` artifacts record the verified checks and remaining gaps for that commit:
+
+| Verification | macOS cloud runners | Linux X11 cloud runner |
+| --- | --- | --- |
+| Shared unit tests, source paths, and shell syntax | Automated | Automated |
+| Qt waveform, capture lifecycle with fixtures, native launcher generation | Automated | Automated |
+| Real Small-model CPU recognition with synthetic speech | Automated | Automated |
+| Native shortcut, real paste, and changed-window rejection | Needs permission-enabled device testing | Automated with test editors |
+| Complete live recognition into a text field, stop, and history | Needs permission-enabled device testing | Automated; synthetic capture, real recognition and X11 input |
+| Physical microphone, real permissions, everyday apps | Needs device testing | Needs device testing |
+
+To graduate from preview, record the OS version, architecture, microphone, selected model, and app versions on an actual supported desktop. Verify English and Indonesian recordings, live output before stopping, complete final words, repeated start/cancel/stop, focus changes, history, offline restart, and startup after sign-in. On macOS, also verify granting, denying, and revoking Microphone, Accessibility, and Input Monitoring access. Track failures before declaring that platform stable. Wayland needs its own supported input integration and remains unsupported.
+
 ## Compatibility
 
 | System | Status |
@@ -23,10 +40,10 @@ These launchers default to multilingual **Small**, roughly 500 MB, to reduce CPU
 4. Run:
 
    ```bash
-   bash install-desktop.sh
+   bash scripts/desktop/install-desktop.sh
    ```
 
-   Setup creates `.venv-desktop`, installs libraries, downloads Small to your user data folder, and creates **`~/Applications/Dictately.app`**. It does not modify system Python. You can also double-click **Install Dictately.command** if executable permissions were preserved; otherwise use Terminal as above
+   Setup creates `.venv-desktop`, installs libraries, downloads Small to your user data folder, and creates **`~/Applications/Dictately.app`**. It does not modify system Python. You can also double-click **launchers/macos/Install Dictately.command** if executable permissions were preserved; otherwise use Terminal as above
 5. Open **Dictately** from your home **Applications** folder; find its five-bar menu-bar icon
 6. In **System Settings → Privacy & Security**, grant the identity shown by macOS (Dictately, Python, or Terminal, depending on how it was launched) **Microphone**, **Accessibility**, and **Input Monitoring** access. Quit and reopen afterward. The app explains missing typing/listening access; it does not change permissions itself
 7. Choose **English only** or **Indonesian only**, click an editable field, press **F12**, speak, then press **F12** again to finish
@@ -51,10 +68,10 @@ The generated `.app` launches this source folder's private Python environment. K
    ```bash
    git clone https://github.com/AlthafTM/dictately.git
    cd dictately
-   bash install-desktop.sh
+   bash scripts/desktop/install-desktop.sh
    ```
 
-4. Open **Dictately** from your application menu, or run `bash start-desktop.sh`. Desktops hiding tray icons need a tray/AppIndicator extension to reach its menu
+4. Open **Dictately** from your application menu, or run `bash scripts/desktop/start-desktop.sh`. Desktops hiding tray icons need a tray/AppIndicator extension to reach its menu
 5. Select **English only** or **Indonesian only**, click a field, press **F12**, speak, then press **F12** again. **Esc** cancels the unfinished phrase; already pasted phrases remain
 
 F12 is reserved while running, so it should not also open browser developer tools. Remove conflicting window-manager shortcuts before launching. Linux uses standard **Ctrl+V** paste; terminals requiring **Ctrl+Shift+V** need manual copying from History. Running the app requires no `sudo`, `uinput` rules, or input-device permission changes.
@@ -64,9 +81,9 @@ F12 is reserved while running, so it should not also open browser developer tool
 Enable optional startup during installation or afterward:
 
 ```bash
-bash install-desktop.sh --startup
+bash scripts/desktop/install-desktop.sh --startup
 # Without reinstalling dependencies/models:
-.venv-desktop/bin/python desktop_app.py --install-launcher --startup
+.venv-desktop/bin/python app/desktop_app.py --install-launcher --startup
 ```
 
 macOS writes `~/Library/LaunchAgents/dev.althafm.dictately.plist`, effective at the next sign-in. Linux writes `~/.config/autostart/dictately.desktop`. Disable startup by removing only that file, or disabling the desktop startup entry. Quit from the menu icon to stop the running app.
@@ -74,9 +91,9 @@ macOS writes `~/Library/LaunchAgents/dev.althafm.dictately.plist`, effective at 
 Quit Dictately before switching models:
 
 ```bash
-.venv-desktop/bin/python desktop_app.py --install-model turbo
+.venv-desktop/bin/python app/desktop_app.py --install-model turbo
 # Return to the lighter default:
-.venv-desktop/bin/python desktop_app.py --install-model small
+.venv-desktop/bin/python app/desktop_app.py --install-model small
 ```
 
 Downloads use a single Hugging Face revision and the Hub's snapshot/cache mechanism. Selection changes only after required files exist. Turbo needs about 1.6 GB of model storage plus libraries. Keep several GB free for libraries, model caches, and staging. `--install-model large-v3` is also available but costs substantially more CPU time and RAM.

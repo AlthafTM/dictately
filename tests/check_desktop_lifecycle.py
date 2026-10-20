@@ -1,3 +1,4 @@
+from _support import ROOT
 """Exercise asynchronous desktop capture/finalization with synthetic audio only."""
 import os
 from pathlib import Path
@@ -6,7 +7,6 @@ import tempfile
 import time
 from unittest.mock import patch
 
-sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 
 
 def main():

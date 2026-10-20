@@ -1,3 +1,4 @@
+from _support import ROOT
 """Owned native editors for Rust destination-routing regression tests. No external app input."""
 import ctypes as c
 from ctypes import wintypes as w

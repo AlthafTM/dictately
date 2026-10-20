@@ -37,7 +37,7 @@ impl Process {
         let bundled = root.join("runtime/worker/DictatelyWorker.exe");
         let mut command = if bundled.is_file() { Command::new(bundled) } else {
             let mut python = Command::new(root.join(".venv/Scripts/python.exe"));
-            python.arg(root.join("live_worker.py")); python
+            python.arg(root.join("app/live_worker.py")); python
         };
         let mut child = command
             .current_dir(root).creation_flags(0x08000000).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(log)

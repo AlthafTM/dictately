@@ -75,10 +75,10 @@ Install [Python 3.12 for Windows](https://www.python.org/downloads/windows/), in
 
 ```powershell
 # NVIDIA GPU setup
-.\setup.ps1 -Gpu
+.\scripts/windows/setup.ps1 -Gpu
 
 # Or CPU-only setup
-.\setup.ps1
+.\scripts/windows/setup.ps1
 ```
 
 The setup script creates a private `.venv`, installs dependencies, downloads and verifies the pinned speech model, and adds a Start menu shortcut. A release ZIP contains the controller and app files; Python dependencies and model weights are downloaded during setup. It is not a self-contained, single-executable installer.
@@ -86,10 +86,10 @@ The setup script creates a private `.venv`, installs dependencies, downloads and
 To also enable sign-in startup:
 
 ```powershell
-.\setup.ps1 -Gpu -StartWithWindows
+.\scripts/windows/setup.ps1 -Gpu -StartWithWindows
 ```
 
-Launch **Dictately** from the Start menu or double-click `Start Dictately.vbs`. Keep the extracted folder in place: the executable uses the worker, environment, and model files beside it.
+Launch **Dictately** from the Start menu or double-click `launchers/windows/Start Dictately.vbs`. Keep the extracted folder in place: the executable uses the worker, environment, and model files beside it.
 
 ### Build from source
 
@@ -104,7 +104,7 @@ In addition to Python, install [Rust](https://rust-lang.org/tools/install/) and 
 
 ```powershell
 cd path\to\Dictately
-.\setup.ps1 -Gpu
+.\scripts/windows/setup.ps1 -Gpu
 ```
 
 Setup builds the native controller if `Dictately.exe` is missing. Use `-Rebuild` to rebuild an existing installation. GNU Rust with `windres` is also supported; the build wrapper reuses project-local tools when present.
@@ -125,7 +125,7 @@ Setup builds the native controller if `Dictately.exe` is missing. Use `-Rebuild`
 | Tray icon | Language, history/settings, startup, and quit |
 | History & settings | Copy transcripts, clear history, edit vocabulary, accuracy, cleanup, and startup |
 | Keyboard shortcuts | Click a shortcut, press your preferred key/combination, then save |
-| `Stop Dictately.ps1` | Stop the installed controller from PowerShell |
+| `scripts/windows/Stop Dictately.ps1` | Stop the installed controller from PowerShell |
 
 **Default Windows shortcuts: F12 for dictation and F10 for language selection.** Both are configurable during setup or from **Tray → Keyboard shortcuts**. A **Dictately Settings** Start-menu launcher also opens the editor, with a shortcuts control at its bottom left. Esc cancels shortcut capture; duplicate assignments and modifier-only shortcuts are rejected. Windows-reserved shortcuts may be unavailable, and assigning a normal typing key consumes that key globally while Dictately runs.
 
@@ -143,9 +143,9 @@ Turbo is installed by default. For a smaller model or an accuracy-oriented Large
 .\runtime\worker\DictatelyWorker.exe --select-model turbo
 ```
 
-Source/manual ZIP users use `.\.venv\Scripts\python.exe select_model.py <model>` instead. Detailed instructions for both are in the model guide.
+Source/manual ZIP users use `.\.venv\Scripts\python.exe app/select_model.py <model>` instead. Detailed instructions for both are in the model guide.
 
-Wait for the download/selection to finish, then reopen `Start Dictately.vbs`. All choices run locally and retain the English/Indonesian language controls. Larger models can increase latency and memory use; a better result is not guaranteed. See the [step-by-step AI model guide](docs/AI-MODELS.md) for choosing, installing, switching back, and developing other engine integrations.
+Wait for the download/selection to finish, then reopen `launchers/windows/Start Dictately.vbs`. All choices run locally and retain the English/Indonesian language controls. Larger models can increase latency and memory use; a better result is not guaranteed. See the [step-by-step AI model guide](docs/AI-MODELS.md) for choosing, installing, switching back, and developing other engine integrations.
 
 ### Correct something you just dictated
 
@@ -185,15 +185,32 @@ Speech inference stays on the device. Normal dictation does not save audio recor
 The Win32 controller handles the hotkey, microphone buffers, waveform, tray menu, destination tracking, and spoken-correction edits. A separate Python worker runs [faster-whisper](https://github.com/SYSTRAN/faster-whisper) / CTranslate2. Editor accessibility calls run on a dedicated COM thread so a slow provider cannot block shortcut handling or the waveform.
 
 ```powershell
-.\build-native.ps1 build --release --locked
-.\build-native.ps1 test --release --locked
-.\.venv\Scripts\python.exe -m unittest test_live_worker -q
+.\scripts/windows/build-native.ps1 build --release --locked
+.\scripts/windows/build-native.ps1 test --release --locked
+.\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py" -q
 
 # Create a Windows release ZIP and SHA-256 file
-.\package.ps1 -Build
+.\scripts/windows/package.ps1 -Build
 ```
 
-Tests requiring desktop focus and synthetic audio are documented in [Development and testing](docs/DEVELOPMENT.md). GPU dependencies are optional; see `requirements-gpu.txt`. Icon generation uses `requirements-dev.txt`.
+Tests requiring desktop focus and synthetic audio are documented in [Development and testing](docs/DEVELOPMENT.md). GPU dependencies are optional; see `requirements/gpu.txt`. Icon generation uses `requirements/dev.txt`.
+
+### Repository layout
+
+```text
+app/           Python recognition worker, settings, and desktop frontend
+native/        Rust Windows controller
+installer/     Windows setup implementation and runtime bundling
+scripts/       Windows build/setup helpers and macOS/Linux setup scripts
+launchers/     Windows and macOS source launchers
+requirements/  Dependency lists for each environment
+tests/         Unit tests and separate desktop verification tools
+assets/        Icons, model manifest, and package file list
+docs/          Setup, architecture, model options, and comparison guides
+licenses/      Third-party license notices
+```
+
+Run commands from the repository root. Build outputs, local models, environments, and personal data stay out of Git. When updating an older source checkout, quit Dictately, pull the changes, then rebuild the controller with `scripts/windows/setup.ps1 -Rebuild` on Windows or rerun `scripts/desktop/install-desktop.sh` on macOS/Linux to refresh its launcher.
 
 The checked-in model manifest pins the download revision and SHA-256 checksums. Generated executables, weights, environments, runtimes, recordings, logs, and personal data are excluded from Git.
 

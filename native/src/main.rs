@@ -517,7 +517,7 @@ impl App {
         let bundled = self.root.join("runtime/settings/DictatelySettings.exe");
         let mut command = if bundled.is_file() { Command::new(bundled) } else {
             let mut python = Command::new(self.root.join(".venv/Scripts/pythonw.exe"));
-            python.arg(self.root.join("settings_window.py")); python
+            python.arg(self.root.join("app/settings_window.py")); python
         };
         if shortcuts {command.arg("--shortcuts");}
         let _ = command.current_dir(&self.root).env("DICTATELY_ROOT", &self.root).creation_flags(0x08000000).spawn();
@@ -660,7 +660,7 @@ fn main() {
             return;
         }
         let exe = std::env::current_exe().unwrap();
-        let root = exe.ancestors().find(|p| p.join("live_worker.py").is_file()).unwrap().to_path_buf();
+        let root = exe.ancestors().find(|p| p.join("app/live_worker.py").is_file()).unwrap().to_path_buf();
         let data_override=std::env::var_os("DICTATELY_DATA").or_else(||std::env::var_os("LOCALFLOW_DATA"));
         let migrate=data_override.is_none();
         let data = data_override.map(PathBuf::from).unwrap_or_else(|| PathBuf::from(std::env::var_os("LOCALAPPDATA").unwrap()).join("Dictately"));
@@ -687,7 +687,7 @@ fn main() {
         if args.iter().any(|arg|arg=="--settings") {
             let bundled=root.join("runtime/settings/DictatelySettings.exe");
             let mut command=if bundled.is_file() {Command::new(bundled)} else {
-                let mut python=Command::new(root.join(".venv/Scripts/pythonw.exe"));python.arg(root.join("settings_window.py"));python
+                let mut python=Command::new(root.join(".venv/Scripts/pythonw.exe"));python.arg(root.join("app/settings_window.py"));python
             };
             if args.iter().any(|arg|arg=="--shortcuts") {command.arg("--shortcuts");}
             if command.current_dir(&root).env("DICTATELY_ROOT",&root).creation_flags(0x08000000).spawn().is_err() {std::process::exit(1);}

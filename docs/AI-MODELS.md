@@ -22,7 +22,7 @@ On the development laptop (RTX 3050 6 GB, about 16 GB system RAM), Turbo is the 
 2. Stop recording, then choose **Quit** in the tray menu, or run the following in PowerShell from the app folder
 
    ```powershell
-   & '.\Stop Dictately.ps1'
+   & '.\scripts/windows/Stop Dictately.ps1'
    ```
 
 3. Download and select **one** model. **Installer users** use the included worker:
@@ -37,15 +37,15 @@ On the development laptop (RTX 3050 6 GB, about 16 GB system RAM), Turbo is the 
 
    ```powershell
    # Smaller model
-   .\.venv\Scripts\python.exe select_model.py small
+   .\.venv\Scripts\python.exe app/select_model.py small
 
    # OR full Large-v3
-   .\.venv\Scripts\python.exe select_model.py large-v3
+   .\.venv\Scripts\python.exe app/select_model.py large-v3
    ```
 
    Wait for `Selected ...` before continuing. First installation requires internet and can take time. The script selects the model only after the download succeeds; a failed download leaves your existing selection intact. Run the same command again to resume/reuse the download
 
-4. Open `Start Dictately.vbs`, choose English or Indonesian from the tray menu, click a text field, and press F12
+4. Open `launchers/windows/Start Dictately.vbs`, choose English or Indonesian from the tray menu, click a text field, and press F12
 5. Compare the same phrases with your previous model. Check names, numbers, negation, and the delay before text appears. A larger model is not guaranteed to win on every phrase
 
 ### Return to the default
@@ -57,10 +57,10 @@ Quit Dictately, then run:
 .\runtime\worker\DictatelyWorker.exe --select-model turbo
 
 # Source/manual ZIP users, instead
-.\.venv\Scripts\python.exe select_model.py turbo
+.\.venv\Scripts\python.exe app/select_model.py turbo
 ```
 
-Launch `Start Dictately.vbs` again. This reuses/verifies the pinned Turbo download from setup. You do not need to rebuild Rust or reinstall the app to switch models.
+Launch `launchers/windows/Start Dictately.vbs` again. This reuses/verifies the pinned Turbo download from setup. You do not need to rebuild Rust or reinstall the app to switch models.
 
 ## Where the files go
 
@@ -83,7 +83,7 @@ Qwen3-ASR is a separate engine, **not** a drop-in model for faster-whisper. Its 
 For contributors implementing another engine:
 
 1. Use an isolated development checkout and Python environment
-2. Add an engine adapter behind the worker protocol in `live_worker.py`, preserving `prepare`/recognition requests, explicit language locking, and local-only model loading
+2. Add an engine adapter behind the worker protocol in `app/live_worker.py`, preserving `prepare`/recognition requests, explicit language locking, and local-only model loading
 3. Map audio and results to the existing 16 kHz mono input and result fields, including timestamps/consumed audio for stable phrase output
 4. Keep model download/setup separate from runtime and provide an explicit rollback to Turbo
 5. Test phrase boundaries, English/Indonesian selection, silence, punctuation, and corrections before testing desktop insertion

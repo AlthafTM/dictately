@@ -1,3 +1,4 @@
+from _support import ROOT
 """Isolated microphone/overlay responsiveness check; never inserts text."""
 import ctypes
 from ctypes import wintypes

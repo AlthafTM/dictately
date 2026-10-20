@@ -1,3 +1,4 @@
+from _support import ROOT
 """Install into an isolated folder, exercise frozen runtime, and uninstall.
 
 This manages the current user's Dictately shortcut/registry entries temporarily;
@@ -153,8 +154,8 @@ foreach ($name in @('Transcribr.lnk','Transcribr Settings.lnk')) {
         keys=json.loads((QA/'installed-data/settings.json').read_text())
         assert keys['dictation_hotkey']==123 and keys['language_hotkey']==889
         results['installed_shortcut_configuration']=True
-        run([sys.executable, ROOT / "test_lifecycle.py", "--app-dir", INSTALL], cwd=ROOT)
-        result = run([sys.executable, ROOT / "test_native.py", "--quick", "--app-dir", INSTALL], cwd=ROOT)
+        run([sys.executable, ROOT / "tests/check_lifecycle.py", "--app-dir", INSTALL], cwd=ROOT)
+        result = run([sys.executable, ROOT / "tests/check_native.py", "--quick", "--app-dir", INSTALL], cwd=ROOT)
         desktop = json.loads(result.stdout)
         assert desktop["sessions"][0]["reference_word_recall"] == 1.0
         results["installed_native_dictation"] = True

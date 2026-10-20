@@ -1,18 +1,19 @@
 param([switch]$SkipFreeze)
 $ErrorActionPreference = 'Stop'
-Set-Location -LiteralPath $PSScriptRoot
-$python = Join-Path $PSScriptRoot '.venv\Scripts\python.exe'
-if (-not (Test-Path -LiteralPath $python)) { throw 'Run setup.ps1 first to create the build environment' }
+$taskRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+Set-Location -LiteralPath $taskRoot
+$python = Join-Path $taskRoot '.venv\Scripts\python.exe'
+if (-not (Test-Path -LiteralPath $python)) { throw 'Run scripts/windows/setup.ps1 first to create the build environment' }
 if (-not $SkipFreeze) {
-    & $python -m pip install -r requirements-installer.txt
+    & $python -m pip install -r requirements/installer.txt
     if ($LASTEXITCODE -ne 0) { throw 'Installer build dependencies failed' }
     & $python -m PyInstaller --noconfirm --distpath dist\frozen --workpath .tools\freeze-build installer\runtime.spec
     if ($LASTEXITCODE -ne 0) { throw 'Private runtime build failed' }
 }
-& "$PSScriptRoot\build-native.ps1" build --release --locked
+& "$taskRoot\scripts/windows/build-native.ps1" build --release --locked
 if ($LASTEXITCODE -ne 0) { throw 'Native build failed' }
 $version = ((Get-Content native\Cargo.toml | Select-String '^version = "([^"]+)"').Matches[0].Groups[1].Value)
-$stage = Join-Path $PSScriptRoot ('dist\installer-stage-' + [guid]::NewGuid().ToString('N'))
+$stage = Join-Path $taskRoot ('dist\installer-stage-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $stage,"$stage\runtime" -Force | Out-Null
 $files = Get-Content assets\package-files.json -Raw | ConvertFrom-Json
 foreach ($name in $files) {
@@ -34,7 +35,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Uninstaller compilation failed' }
 & $python installer\make_payload.py $stage
 if ($LASTEXITCODE -ne 0) { throw 'Payload creation failed' }
 $payload = Join-Path $stage 'payload.zip'
-$installer = Join-Path $PSScriptRoot "dist\Dictately-$version-Setup.exe"
+$installer = Join-Path $taskRoot "dist\Dictately-$version-Setup.exe"
 & $compiler @compilerArgs "/resource:$payload,Dictately.payload.zip" "/out:$installer" installer\Setup.cs
 if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed' }
 $hash = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLower()

@@ -239,7 +239,7 @@ def run_desktop(smoke=False, probe=None):
                 from speech_models import selected_model
                 directory = selected_model(data)
                 if not (data / 'models' / directory / 'model.bin').exists():
-                    raise RuntimeError('Speech model is missing. Run Install Dictately.command or install-desktop.sh again')
+                    raise RuntimeError('Speech model is missing. Run launchers/macos/Install Dictately.command or scripts/desktop/install-desktop.sh again')
                 self.hooks = start_hotkey(lambda:self.events.put('toggle'),lambda:self.events.put('cancel'))
             self.timer = QTimer(); self.timer.timeout.connect(self.tick); self.timer.start(40)
         def language(self, code):

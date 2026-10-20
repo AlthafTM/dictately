@@ -1,3 +1,4 @@
+from _support import ROOT
 """Native overlay/microphone lifecycle smoke test; no keystrokes are inserted."""
 import ctypes
 from ctypes import wintypes
@@ -8,7 +9,7 @@ import subprocess
 import time
 import sys
 
-root = Path(__file__).resolve().parent
+root = Path(__file__).resolve().parents[1]
 data = root / "qa/lifecycle"
 data.mkdir(exist_ok=True)
 user = ctypes.WinDLL("user32")
@@ -36,7 +37,7 @@ try:
     assert status()["state"] == "recording", status()
     assert user.IsWindowVisible(hwnd), "Overlay missing while recording"
     time.sleep(.35)
-    from test_native import screenshot
+    from check_native import screenshot
     screenshot(hwnd, root / "qa/start-overlay.png")
     time.sleep(1.0)
     screenshot(hwnd, root / "qa/steady-overlay.png")

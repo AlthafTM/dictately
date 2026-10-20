@@ -1,12 +1,14 @@
+from _support import ROOT
 """Hosted native checks; no personal apps, microphone, or permission changes."""
 import os
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import json
+import platform
 
 ROOT=Path(__file__).resolve().parents[1]
-sys.path.insert(0,str(ROOT))
 
 
 def x11_routing():
@@ -63,7 +65,7 @@ def main():
     with tempfile.TemporaryDirectory() as temporary:
         image=ROOT/'qa/desktop-waveform.png';image.parent.mkdir(exist_ok=True)
         env=dict(os.environ,LOCALFLOW_DATA=temporary,QT_QPA_PLATFORM='offscreen',DICTATELY_SMOKE_IMAGE=str(image))
-        subprocess.run([sys.executable,str(ROOT/'desktop_app.py'),'--smoke-test'],env=env,check=True,timeout=30)
+        subprocess.run([sys.executable,str(ROOT/'app/desktop_app.py'),'--smoke-test'],env=env,check=True,timeout=30)
         assert image.is_file()
         subprocess.run([sys.executable,str(ROOT/'tests/check_desktop_lifecycle.py')],env=env,check=True,timeout=30)
         if sys.platform=='linux':
@@ -99,6 +101,18 @@ def main():
         assert result['language'] in ('en','id')
         assert 'report' in result['cleaned'].lower() and 'tomorrow' in result['cleaned'].lower(),result
         print('Real local CPU model load and synthetic speech decode passed')
+        worker.engine.close()
+        if sys.platform=='linux':
+            subprocess.run(['xvfb-run','-a','sh','-c','openbox >/dev/null 2>&1 & exec "$@"','--',sys.executable,str(ROOT/'tests/check_x11_dictation.py'),str(speech)],env=env,check=True,timeout=180)
+        report={'system':platform.platform(),'architecture':platform.machine(),
+                'verified':['shared unit tests','Qt waveform','capture lifecycle with fixtures','native launcher generation','real Small model CPU decode (English and bilingual mode)'],
+                'not_verified':['physical microphone capture','everyday third-party apps','real-device permissions and hotkey conflicts']}
+        if sys.platform=='linux':
+            report['verified']+=['X11 native hotkey and paste','changed-window rejection','complete live dictation with synthetic capture']
+        else:
+            report['permissions']={'accessibility':bool(ax.AXIsProcessTrusted()),'input_monitoring':bool(Quartz.CGPreflightListenEventAccess())}
+        (ROOT/'qa/platform-validation.json').write_text(json.dumps(report,indent=2),encoding='utf-8')
+        print(json.dumps(report,indent=2))
 
 
 if __name__=='__main__':main()

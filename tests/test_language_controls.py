@@ -1,3 +1,4 @@
+from _support import ROOT
 import unittest
 from types import SimpleNamespace
 from language_commands import language_command, BilingualBackend

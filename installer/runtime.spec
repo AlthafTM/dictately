@@ -21,7 +21,7 @@ for packages in site.getsitepackages():
             # Opaque data avoids duplicating large GPU binaries at the bundle root.
             datas.append((str(dll), f"nvidia/{component}/bin"))
 
-worker = Analysis([str(root / "installer_worker.py")], pathex=[str(root)],
+worker = Analysis([str(root / "app/installer_worker.py")], pathex=[str(root / "app")],
                   binaries=binaries, datas=datas, hiddenimports=hidden,
                   excludes=["torch", "tensorflow", "matplotlib", "IPython", "pytest"])
 worker_pyz = PYZ(worker.pure)
@@ -30,7 +30,7 @@ worker_exe = EXE(worker_pyz, worker.scripts, [], exclude_binaries=True,
                  icon=str(root / "assets/dictately.ico"))
 COLLECT(worker_exe, worker.binaries, worker.datas, name="DictatelyWorker", upx=False)
 
-settings = Analysis([str(root / "settings_window.py")], pathex=[str(root)])
+settings = Analysis([str(root / "app/settings_window.py")], pathex=[str(root / "app")])
 settings_pyz = PYZ(settings.pure)
 settings_exe = EXE(settings_pyz, settings.scripts, [], exclude_binaries=True,
                    name="DictatelySettings", console=False, upx=False,

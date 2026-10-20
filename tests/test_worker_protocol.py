@@ -1,3 +1,4 @@
+from _support import ROOT
 from io import BytesIO
 import json
 import unittest

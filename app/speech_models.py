@@ -15,9 +15,9 @@ def selected_model(root):
     if selection.exists():
         name = json.loads(selection.read_text(encoding="utf-8"))["model"]
         if name not in MODELS:
-            raise ValueError("Unknown speech model; run select_model.py turbo to reset")
+            raise ValueError("Unknown speech model; run app/select_model.py turbo to reset")
         directory = MODELS[name][0]
         if not (root / "models" / directory / "model.bin").is_file():
-            raise FileNotFoundError(f"Selected model {name} is missing; reinstall with select_model.py")
+            raise FileNotFoundError(f"Selected model {name} is missing; reinstall with app/select_model.py")
         return directory
     return "whisper-turbo" if (root / "models/whisper-turbo/model.bin").exists() else "whisper-small"

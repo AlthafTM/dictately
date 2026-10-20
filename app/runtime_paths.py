@@ -13,7 +13,7 @@ def app_root():
     if getattr(sys, "frozen", False):
         # <app>/runtime/{worker,settings}/<executable>
         return Path(sys.executable).resolve().parents[2]
-    return Path(__file__).resolve().parent
+    return Path(__file__).resolve().parents[1]
 
 
 def user_data_dir():

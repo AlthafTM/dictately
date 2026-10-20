@@ -1,3 +1,4 @@
+from _support import ROOT
 import hashlib
 import json
 import os

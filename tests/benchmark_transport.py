@@ -1,3 +1,4 @@
+from _support import ROOT
 """Repeatable transport microbenchmark, not an ASR or end-to-end latency test."""
 from io import BytesIO
 import json
@@ -5,7 +6,6 @@ from pathlib import Path
 import statistics
 import sys
 import time
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import numpy as np
 from worker_protocol import read_request
 

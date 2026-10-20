@@ -33,15 +33,25 @@ jobs:
       - name: Create build environment
         run: python -m venv .venv
       - name: Build private runtimes and installer
-        run: ./build-installer.ps1
+        run: ./scripts/windows/build-installer.ps1
       - name: Native checks
         run: cargo test --manifest-path native/Cargo.toml --release --locked
       - name: Python checks
         shell: pwsh
         run: |
-          ./.venv/Scripts/python.exe -m unittest test_live_worker -q
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           ./.venv/Scripts/python.exe -m unittest discover -s tests -p 'test_*.py' -q
+      - name: Frozen worker startup without model downloads
+        shell: pwsh
+        run: |
+          @'
+          from pathlib import Path
+          import subprocess
+          executable = Path('dist/frozen/DictatelyWorker/DictatelyWorker.exe').resolve()
+          result = subprocess.run([str(executable)], input='{"command":"quit"}\n', text=True, capture_output=True, timeout=60, cwd=executable.parent)
+          assert result.returncode == 0, result.stderr
+          print('Frozen worker imports and clean shutdown passed')
+          '@ | ./.venv/Scripts/python.exe -
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@v4
         with:
           name: Dictately-Windows-Installer

@@ -21,7 +21,7 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libportaudio2 xdotool xclip xvfb openbox espeak libegl1 libopengl0 libxcb-util1 libxcb-shape0 libxcb-cursor0 libxkbcommon-x11-0 libxcb-icccm4 libxcb-keysyms1 libxcb-image0 libxcb-render-util0 libxcb-xinerama0
       - name: Install desktop dependencies
-        run: python -m pip install -r requirements-desktop.txt
+        run: python -m pip install -r requirements/desktop.txt
       - name: Qt native dependencies
         if: runner.os == 'Linux'
         run: |
@@ -34,25 +34,35 @@ jobs:
           assert 'not found' not in result
           PY
       - name: Shared and desktop unit tests
-        run: |
-          python -m unittest test_live_worker -q
-          python -m unittest discover -s tests -p 'test_*.py' -q
+        run: python -m unittest discover -s tests -p 'test_*.py' -q
       - name: Check launch scripts
-        run: bash -n install-desktop.sh start-desktop.sh 'Install Dictately.command' 'Start Dictately.command'
-      - name: Native desktop smoke test
+        run: bash -n scripts/desktop/install-desktop.sh scripts/desktop/start-desktop.sh 'launchers/macos/Install Dictately.command' 'launchers/macos/Start Dictately.command'
+      - name: Native desktop and recognition checks
         run: python tests/check_posix_desktop.py
       - name: Upload source launchers and guide
         uses: actions/upload-artifact@v4
         with:
           name: Dictately-desktop-source-${{ matrix.os }}
           path: |
-            *.py
-            requirements.txt
-            requirements-desktop.txt
-            *Dictately.command
-            *desktop.sh
+            app/
+            requirements/
+            launchers/macos/
+            scripts/desktop/
             assets/dictately.png
             docs/MACOS-LINUX.md
+            LICENSE
+            THIRD_PARTY.md
+            licenses/
+            README.md
+      - name: Platform validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-${{ matrix.os }}
+          path: |
+            qa/platform-validation.json
+            qa/linux-dictation.json
+          if-no-files-found: ignore
       - name: Waveform preview
         if: always()
         uses: actions/upload-artifact@v4

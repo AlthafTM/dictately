@@ -1,7 +1,8 @@
 $ErrorActionPreference = 'Stop'
+$taskRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $taskStatusPath = Join-Path $env:LOCALAPPDATA 'Dictately\status.json'
 $taskStatus = if (Test-Path -LiteralPath $taskStatusPath) { Get-Content -LiteralPath $taskStatusPath -Raw | ConvertFrom-Json } else { $null }
-$taskExecutable = Join-Path $PSScriptRoot 'Dictately.exe'
+$taskExecutable = Join-Path $taskRoot 'Dictately.exe'
 $controllers = @(Get-CimInstance Win32_Process -Filter "Name='Dictately.exe'" | Where-Object { $_.ExecutablePath -eq $taskExecutable })
 foreach ($controller in $controllers) {
     if ($taskStatus -and $controller.ProcessId -eq $taskStatus.pid) {

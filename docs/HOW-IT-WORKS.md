@@ -22,7 +22,7 @@ Dictately is a **local live dictation tool**. It listens while you enable record
 | faster-whisper / CTranslate2 | Local inference software, not additional trained AI models | Shared by all three choices |
 | Silero VAD through faster-whisper | Filters non-speech portions before transcription | Part of the recognition pipeline |
 
-See [Local AI models](AI-MODELS.md) for step-by-step installation, switching, and rollback. Alternative engines require a new adapter and validation; copying arbitrary AI weights into the model folder is not supported. Legacy rewriting experiments in `engine.py` are not started or imported by the live dictation worker.
+See [Local AI models](AI-MODELS.md) for step-by-step installation, switching, and rollback. Alternative engines require a new adapter and validation; copying arbitrary AI weights into the model folder is not supported. Legacy rewriting experiments in `app/engine.py` are not started or imported by the live dictation worker.
 
 ## Languages and picker
 

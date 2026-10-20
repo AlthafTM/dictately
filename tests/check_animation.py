@@ -1,3 +1,4 @@
+from _support import ROOT
 """Measure native UI frame submission with synthetic silence and no editor input."""
 import ctypes as c
 from ctypes import wintypes as w
