@@ -55,8 +55,9 @@ def pump():
         # stock top-level EDIT would enter Windows' modal system-menu loop,
         # preventing the Python wait deadline from running. Count delivery
         # without dispatching that menu action; real hotkeys are still tested.
-        if message.message in (0x100,0x101,0x104,0x105) and message.wParam==121:
-            passthrough_f10+=1;continue
+        if message.message in (0x100,0x101,0x104,0x105) and message.wParam in (121,18):
+            if message.wParam==121:passthrough_f10+=1
+            continue
         if message.message==0x112 and message.wParam&0xfff0==0xf100:continue
         user.TranslateMessage(c.byref(message));user.DispatchMessageW(c.byref(message))
 
@@ -79,6 +80,7 @@ def main():
     results={}
     try:
         for index,(name,expected) in enumerate([('english','en'),('indonesia','id'),('both','both')]):
+            print('Starting language-picker check:',name,flush=True)
             data=base/name;data.mkdir()
             with wave.open(str(ROOT/f'qa/language-{name}.wav'),'rb') as source:
                 assert (source.getframerate(),source.getsampwidth(),source.getnchannels())==(16000,2,1)
@@ -92,6 +94,7 @@ def main():
             status=lambda:read(data/'status.json')
             try:
                 wait(lambda:status().get('pid')==process.pid and (index==0 or status().get('engine_ready')))
+                print('Language-picker controller ready:',name,flush=True)
                 hwnd=status()['hwnd']
                 if index==0:
                     # While a shortcut-capture dialog owns this event, old
