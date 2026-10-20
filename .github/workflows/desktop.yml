@@ -19,9 +19,20 @@ jobs:
           python-version: '3.12'
       - name: Linux desktop libraries
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libportaudio2 xdotool xclip xvfb openbox espeak libegl1 libxcb-cursor0 libxkbcommon-x11-0 libxcb-icccm4 libxcb-keysyms1 libxcb-image0 libxcb-render-util0 libxcb-xinerama0
+        run: sudo apt-get update && sudo apt-get install -y libportaudio2 xdotool xclip xvfb openbox espeak libegl1 libopengl0 libxcb-util1 libxcb-cursor0 libxkbcommon-x11-0 libxcb-icccm4 libxcb-keysyms1 libxcb-image0 libxcb-render-util0 libxcb-xinerama0
       - name: Install desktop dependencies
         run: python -m pip install -r requirements-desktop.txt
+      - name: Qt native dependencies
+        if: runner.os == 'Linux'
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import PySide6, subprocess
+          library=Path(PySide6.__file__).parent/'Qt/plugins/platforms/libqxcb.so'
+          result=subprocess.check_output(['ldd',str(library)],text=True)
+          print(result)
+          assert 'not found' not in result
+          PY
       - name: Shared and desktop unit tests
         run: |
           python -m unittest test_live_worker -q

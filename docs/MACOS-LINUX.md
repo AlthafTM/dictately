@@ -42,7 +42,7 @@ The generated `.app` launches this source folder's private Python environment. K
 
    ```bash
    sudo apt update
-   sudo apt install python3.12 python3.12-venv libportaudio2 xdotool xclip libegl1 libxcb-cursor0 libxkbcommon-x11-0 libxcb-icccm4 libxcb-keysyms1 libxcb-image0 libxcb-render-util0 libxcb-xinerama0
+   sudo apt install python3.12 python3.12-venv libportaudio2 xdotool xclip libegl1 libopengl0 libxcb-util1 libxcb-cursor0 libxkbcommon-x11-0 libxcb-icccm4 libxcb-keysyms1 libxcb-image0 libxcb-render-util0 libxcb-xinerama0
    ```
 
    Ubuntu 22.04 does not include Python 3.12 by default: install it with your preferred Python version manager, or use Ubuntu 24.04. Other distributions have different package names. Setup does not add package repositories or require running Transcribr as root

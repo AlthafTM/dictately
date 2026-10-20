@@ -25,7 +25,8 @@ class ModelSelectionTests(unittest.TestCase):
                 def download(**options):
                     self.assertEqual(options["revision"], "specific-revision")
                     options["local_dir"].mkdir()
-                    for filename in ("model.bin", "config.json", "tokenizer.json"):
+                    self.assertIn('vocabulary.txt',options['allow_patterns'])
+                    for filename in ("model.bin", "config.json", "tokenizer.json", "vocabulary.txt"):
                         (options["local_dir"] / filename).touch()
                 hub.snapshot_download.side_effect = download
                 select_model.main()

@@ -23,10 +23,12 @@ def main():
         destination = ROOT / "models" / directory
         snapshot_download(repo_id=repo, revision=revision, local_dir=destination,
                           allow_patterns=["model.bin", "config.json", "tokenizer.json",
-                                          "vocabulary.json", "preprocessor_config.json"])
+                                          "vocabulary.json", "vocabulary.txt", "preprocessor_config.json"])
         for required in ("model.bin", "config.json", "tokenizer.json"):
             if not (destination / required).is_file():
                 raise RuntimeError(f"Incomplete download: {required}")
+        if not any((destination/name).is_file() for name in ('vocabulary.json','vocabulary.txt')):
+            raise RuntimeError('Incomplete download: vocabulary is missing')
         (destination / "source.json").write_text(
             json.dumps({"repo": repo, "revision": revision}, indent=2), encoding="utf-8")
     selection = ROOT / "models/selected-model.json"

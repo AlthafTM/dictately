@@ -82,10 +82,12 @@ def install_model(name):
     root = user_data_dir()
     destination = root / "models" / directory
     snapshot_download(repo_id=repo, revision=revision, local_dir=destination,
-                      allow_patterns=["model.bin", "config.json", "tokenizer.json", "vocabulary.json", "preprocessor_config.json"])
+                      allow_patterns=["model.bin", "config.json", "tokenizer.json", "vocabulary.json", "vocabulary.txt", "preprocessor_config.json"])
     for required in ("model.bin", "config.json", "tokenizer.json"):
         if not (destination / required).is_file():
             raise RuntimeError(f"Incomplete model download: {required}")
+    if not any((destination/name).is_file() for name in ('vocabulary.json','vocabulary.txt')):
+        raise RuntimeError('Incomplete model download: vocabulary is missing')
     write_json(destination / "source.json", {"repo":repo, "revision":revision})
     write_json(root / "models/selected-model.json", {"model":name})
     print(f"Selected {name}; dictation works offline after setup")
@@ -279,9 +281,13 @@ def run_desktop(smoke=False, probe=None):
         def close_mic(self, stream):
             self.mic_closing=True
             def close():
-                try:stream.stop()
+                try:
+                    try:stream.stop()
+                    finally:stream.close()
+                except Exception:
+                    logger.exception('Microphone shutdown failed')
                 finally:
-                    stream.close();self.events.put('mic_stopped')
+                    self.events.put('mic_stopped')
             threading.Thread(target=close,daemon=True).start()
         def cancel(self):
             if not (self.recording or self.starting or self.finishing):return

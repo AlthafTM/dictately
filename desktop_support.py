@@ -63,6 +63,9 @@ class DesktopInput:
             error, focused = self.ax.AXUIElementCopyAttributeValue(app, "AXFocusedUIElement", None)
             if error or focused is None:
                 raise RuntimeError("The active app did not expose an editable text field")
+            _, subrole = self.ax.AXUIElementCopyAttributeValue(focused, "AXSubrole", None)
+            if subrole == "AXSecureTextField":
+                raise RuntimeError("Dictation is unavailable in password fields")
             error, writable = self.ax.AXUIElementIsAttributeSettable(focused, "AXValue", None)
             if error or not writable:
                 raise RuntimeError("Click an editable text field before pressing F12")
