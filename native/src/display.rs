@@ -80,6 +80,15 @@ fn content_phase(age:f32,closing:bool,from:f32)->f32 {
     if closing {from*(1.-smooth(age/0.20))}
     else {from+(1.-from)*smooth((age-0.055)/0.31)}
 }
+fn content_transform(panel:f32,content:f32)->(f32,f32,f32) {
+    ((panel*(0.94+0.06*content)).max(0.001),0.94+0.06*content,6.*(1.-content))
+}
+fn picker_option(x:f32,y:f32,panel:f32,content:f32)->Option<usize> {
+    if content<0.1 {return None;}
+    let (sx,sy,rise)=content_transform(panel,content);
+    let x=(x-190.)/sx+190.;let y=(y-56.-rise)/sy+56.;
+    (0..3).find(|i| {let left=20.+*i as f32*114.;x>=left&&x<=left+112.&&y>=56.&&y<=92.})
+}
 // Content remains a complete layer while the shell changes width. Sampling
 // premultiplied gray and alpha together avoids dark fringes around moving text.
 fn blend_content(destination:u32,gray:f32,alpha:f32,opacity:f32)->u32 {
@@ -207,9 +216,8 @@ impl Display {
         self.dpi=0;self.configure(GetDpiForWindow(self.hwnd).max(96));
     }
     pub fn option_at(&self,x:i32,y:i32)->Option<usize> {
-        if !self.picker || self.closing {return None;}
-        let x=x as f32*96./self.dpi as f32;let y=y as f32*96./self.dpi as f32;
-        (0..3).find(|i| {let left=20.+*i as f32*114.;x>=left&&x<=left+112.&&y>=56.&&y<=92.})
+        if !self.picker || !self.visible || self.closing {return None;}
+        picker_option(x as f32*96./self.dpi as f32,y as f32*96./self.dpi as f32,self.panel_progress,self.content_progress)
     }
     fn render_options(&mut self,age:f32,dt:f32) {
         self.content.fill(0);
@@ -274,10 +282,9 @@ impl Display {
             }
             return;
         }
-        let sx=(self.panel_progress*(0.94+0.06*opacity)).max(0.001);
-        let sy=0.94+0.06*opacity;
+        let (sx,sy,rise)=content_transform(self.panel_progress,opacity);
         let cx=self.rw as f32/2.;let cy=self.rh as f32/2.;
-        let rise=6.*(1.-opacity)*self.sample_scale;
+        let rise=rise*self.sample_scale;
         // Inverse mapping avoids gaps as the rail and glyphs widen together.
         let left=(cx+(15.*self.sample_scale-cx)*sx).floor().max(0.) as i32;
         let right=(cx+(365.*self.sample_scale-cx)*sx).ceil().min(self.rw as f32) as i32;
@@ -470,5 +477,16 @@ mod tests {
         let faded=blend_content(0,100.,128.,0.5);
         assert_eq!(faded&255,50);
         assert_eq!(faded>>24,64);
+    }
+
+    #[test]
+    fn picker_hit_coordinates_follow_visible_options() {
+        // Early in entry English is visually inside the final Indonesia bounds.
+        assert_eq!(picker_option(124.9,78.,0.6,0.2),Some(0));
+        assert_eq!(picker_option(190.,78.,0.6,0.2),Some(1));
+        assert_eq!(picker_option(255.1,78.,0.6,0.2),Some(2));
+        assert_eq!(picker_option(190.,78.,0.6,0.05),None);
+        assert_eq!(picker_option(190.,30.,1.,1.),None);
+        assert_eq!(picker_option(304.,74.,1.,1.),Some(2));
     }
 }
