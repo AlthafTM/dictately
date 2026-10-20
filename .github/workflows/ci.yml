@@ -20,3 +20,5 @@ jobs:
         run: cargo test --manifest-path native/Cargo.toml --release --locked
       - name: Speech-worker unit tests (model-free)
         run: python -m unittest test_live_worker -q
+      - name: Model-selection unit tests (no downloads)
+        run: python -m unittest discover -s tests -p "test_*.py" -q

@@ -7,6 +7,7 @@ Run source-build commands from Developer PowerShell for Visual Studio with Rust,
 .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
 .\build-native.ps1 test --release --locked
 .\.venv\Scripts\python.exe -m unittest test_live_worker -q
+.\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py" -q
 ```
 
 Native tests requiring foreground windows are ignored by default. On an unlocked Windows desktop, with no dictation session active:

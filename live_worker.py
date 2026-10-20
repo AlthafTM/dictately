@@ -29,6 +29,7 @@ if os.name == "nt":
 sys.stdout.reconfigure(encoding="utf-8")
 sys.stdin.reconfigure(encoding="utf-8")
 from engine import Engine
+from speech_models import selected_model
 
 LANGUAGES = {"en", "id"}
 
@@ -128,7 +129,7 @@ class Worker:
             from faster_whisper import WhisperModel
             import ctranslate2
             import numpy as np
-            model_dir = "whisper-turbo" if (Path(__file__).parent / "models/whisper-turbo/model.bin").exists() else "whisper-small"
+            model_dir = selected_model(Path(__file__).parent)
             if os.environ.get("LOCALFLOW_MODEL") == "small":
                 model_dir = "whisper-small"
             model_path = str(Path(__file__).parent / "models" / model_dir)

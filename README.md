@@ -6,7 +6,9 @@
 
 **Local voice typing for Windows — press F12, speak, and type into the app you are using**
 
-Transcribr turns English or Indonesian speech into text in your focused text box. Recognition runs on your computer using Whisper large-v3-turbo. There is no account, subscription, or paid transcription API. A small animated waveform near the bottom of the screen shows when recording is active.
+Transcribr turns English or Indonesian speech into text in your focused text box. Recognition runs locally on your computer using Whisper large-v3-turbo by default. There is no account, subscription, or paid transcription API, and your speech is not sent to a cloud transcription service. After the initial downloads, dictation works offline. A small animated waveform near the bottom of the screen shows when recording is active.
+
+[Installation](#download-and-install) · [Usage](#how-to-use) · [Local AI model options](docs/AI-MODELS.md) · [Releases](https://github.com/AlthafTM/transcribr/releases)
 
 ## Features
 
@@ -18,6 +20,7 @@ Transcribr turns English or Indonesian speech into text in your focused text box
 - **Personal vocabulary** — add names or technical terms as recognition hints
 - **No automatic full stops** — sentence/session-ending periods are removed; internal dots in numbers, filenames, and URLs stay intact
 - **GPU acceleration** — CUDA INT8/FP16 on compatible NVIDIA hardware, with a slower CPU INT8 fallback
+- **Local model choices** — keep Turbo, switch to multilingual Small, or try full Large-v3 using the [step-by-step guide](docs/AI-MODELS.md)
 - **Quiet desktop UI** — native Rust controller, text-free waveform, smooth opening/closing animations, and a monochrome glass effect
 - **Optional startup** — launch quietly when you sign in to Windows
 - **Local history** — retain up to 50 original and cleaned transcripts, with copy and clear controls
@@ -65,6 +68,11 @@ Launch **Transcribr** from the Start menu or double-click `Start Transcribr.vbs`
 
 Download this repository through **Code → Download ZIP**, or clone it with Git. Source checkouts do not include the compiled executable or model weights.
 
+```powershell
+git clone https://github.com/AlthafTM/transcribr.git
+cd transcribr
+```
+
 In addition to Python, install [Rust](https://rust-lang.org/tools/install/) and the [Windows C++ build tools / Windows SDK](https://learn.microsoft.com/en-us/windows/dev-environment/rust/setup). Use **Developer PowerShell for Visual Studio** so the MSVC linker and resource compiler are available:
 
 ```powershell
@@ -91,6 +99,19 @@ Setup builds the native controller if `Transcribr.exe` is missing. Use `-Rebuild
 | `Stop Transcribr.ps1` | Stop the installed controller from PowerShell |
 
 The selected language is fixed for each recording. Automatic language detection, translation, and mixed-language dictation are not supported modes. Change the language before starting a new recording.
+
+### Choose a local AI model
+
+Turbo is installed by default. For a smaller model or an accuracy-oriented Large-v3 experiment, quit the app, open PowerShell in its folder, and run **one** command:
+
+```powershell
+.\.venv\Scripts\python.exe select_model.py small
+.\.venv\Scripts\python.exe select_model.py large-v3
+# Restore the default
+.\.venv\Scripts\python.exe select_model.py turbo
+```
+
+Wait for the download/selection to finish, then reopen `Start Transcribr.vbs`. All choices run locally and retain the English/Indonesian language controls. Larger models can increase latency and memory use; a better result is not guaranteed. See the [step-by-step AI model guide](docs/AI-MODELS.md) for choosing, installing, switching back, and developing other engine integrations.
 
 ### Correct something you just dictated
 
