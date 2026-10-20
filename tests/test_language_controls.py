@@ -1,7 +1,7 @@
 import unittest
 from types import SimpleNamespace
 from language_commands import language_command, BilingualBackend
-from hotkeys import valid_shortcut, shortcut_name
+from hotkeys import valid_shortcut, shortcut_name, LANGUAGE_DEFAULT
 from live_worker import Worker, locked_language
 
 
@@ -41,6 +41,7 @@ class LanguageControlTests(unittest.TestCase):
         self.assertTrue(valid_shortcut(123));self.assertTrue(valid_shortcut(0x341))
         self.assertEqual(shortcut_name(0x341),'Ctrl+Shift+A')
         self.assertEqual(shortcut_name(122),'F11')
+        self.assertEqual(shortcut_name(LANGUAGE_DEFAULT),'F10')
         for key in [0,27,16,162,4096,None,'F12']:
             self.assertFalse(valid_shortcut(key),key)
 

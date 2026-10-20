@@ -15,7 +15,7 @@ user = ctypes.WinDLL("user32")
 user.PostMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
 user.IsWindowVisible.argtypes = [wintypes.HWND]
 application = Path(sys.argv[sys.argv.index("--app-dir") + 1]) if "--app-dir" in sys.argv else root
-process = subprocess.Popen([str(application / "Transcribr.exe"), "--test-target", "0"],
+process = subprocess.Popen([str(application / "Dictately.exe"), "--test-target", "0"],
     env=dict(os.environ, LOCALFLOW_DATA=str(data), LOCALFLOW_PREVIEW_DIR=str(root / "qa")), creationflags=subprocess.CREATE_NO_WINDOW)
 def status():
     try:

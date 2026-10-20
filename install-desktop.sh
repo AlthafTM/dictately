@@ -6,7 +6,7 @@ case "$(uname -s)" in
   Darwin) ;;
   Linux)
     if [[ "${XDG_SESSION_TYPE:-}" == "wayland" || -n "${WAYLAND_DISPLAY:-}" ]]; then
-      echo 'Transcribr currently requires an X11/Xorg session, not Wayland'
+      echo 'Dictately currently requires an X11/Xorg session, not Wayland'
       exit 1
     fi
     for dependency in xdotool xclip; do
@@ -19,7 +19,7 @@ case "$(uname -s)" in
   *) echo 'Use the Windows installer on Windows'; exit 1 ;;
 esac
 
-python_bin="${TRANSCRIBR_PYTHON:-python3.12}"
+python_bin="${DICTATELY_PYTHON:-python3.12}"
 if ! command -v "$python_bin" >/dev/null; then
   echo 'Install Python 3.12 first: https://www.python.org/downloads/'
   echo 'Then run this installer again (see docs/MACOS-LINUX.md)'
@@ -29,8 +29,8 @@ fi
 "$python_bin" -m venv .venv-desktop
 .venv-desktop/bin/python -m pip install --upgrade pip
 .venv-desktop/bin/python -m pip install -r requirements-desktop.txt
-model="${TRANSCRIBR_MODEL:-small}"
+model="${DICTATELY_MODEL:-small}"
 .venv-desktop/bin/python desktop_app.py --install-model "$model"
 .venv-desktop/bin/python desktop_app.py --install-launcher "$@"
-echo 'Setup complete. Launch Transcribr from Applications / your application menu'
+echo 'Setup complete. Launch Dictately from Applications / your application menu'
 echo 'Keep this folder in place. On macOS, grant Microphone, Accessibility and Input Monitoring permissions'

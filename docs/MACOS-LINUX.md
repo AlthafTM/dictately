@@ -1,4 +1,4 @@
-# Transcribr for macOS and Linux — experimental
+# Dictately for macOS and Linux: experimental
 
 Local voice typing in **English** or **Indonesian**, with F12, a compact animated waveform, history, and application launchers. The initial dependencies and speech model need an internet connection; dictation works offline afterward. Audio is processed locally.
 
@@ -18,7 +18,7 @@ These launchers default to multilingual **Small**, roughly 500 MB, to reduce CPU
 ## macOS: install and launch
 
 1. Install **Python 3.12** from [python.org](https://www.python.org/downloads/macos/), using the package for your Mac. Run its included **Install Certificates.command** if Python's HTTPS certificate check fails
-2. Download this repository through **Code → Download ZIP**, extract it, and move the folder somewhere permanent, for example `~/Applications/transcribr-source`
+2. Download this repository through **Code → Download ZIP**, extract it, and move the folder somewhere permanent, for example `~/Applications/dictately-source`
 3. Open **Terminal**, type `cd `, drag the extracted folder into Terminal, and press Return
 4. Run:
 
@@ -26,9 +26,9 @@ These launchers default to multilingual **Small**, roughly 500 MB, to reduce CPU
    bash install-desktop.sh
    ```
 
-   Setup creates `.venv-desktop`, installs libraries, downloads Small to your user data folder, and creates **`~/Applications/Transcribr.app`**. It does not modify system Python. You can also double-click **Install Transcribr.command** if executable permissions were preserved; otherwise use Terminal as above
-5. Open **Transcribr** from your home **Applications** folder; find its five-bar menu-bar icon
-6. In **System Settings → Privacy & Security**, grant the identity shown by macOS (Transcribr, Python, or Terminal, depending on how it was launched) **Microphone**, **Accessibility**, and **Input Monitoring** access. Quit and reopen afterward. The app explains missing typing/listening access; it does not change permissions itself
+   Setup creates `.venv-desktop`, installs libraries, downloads Small to your user data folder, and creates **`~/Applications/Dictately.app`**. It does not modify system Python. You can also double-click **Install Dictately.command** if executable permissions were preserved; otherwise use Terminal as above
+5. Open **Dictately** from your home **Applications** folder; find its five-bar menu-bar icon
+6. In **System Settings → Privacy & Security**, grant the identity shown by macOS (Dictately, Python, or Terminal, depending on how it was launched) **Microphone**, **Accessibility**, and **Input Monitoring** access. Quit and reopen afterward. The app explains missing typing/listening access; it does not change permissions itself
 7. Choose **English only** or **Indonesian only**, click an editable field, press **F12**, speak, then press **F12** again to finish
 
 Some keyboards require **Fn/Globe + F12** unless “Use F1, F2, etc. keys as standard function keys” is enabled. Reassign any conflicting F12 desktop shortcut. Password fields and apps without editable Accessibility elements are unsupported. The destination must allow clipboard paste.
@@ -45,16 +45,16 @@ The generated `.app` launches this source folder's private Python environment. K
    sudo apt install python3.12 python3.12-venv python3.12-dev build-essential libportaudio2 xdotool xclip libegl1 libopengl0 libxcb-util1 libxcb-shape0 libxcb-cursor0 libxkbcommon-x11-0 libxcb-icccm4 libxcb-keysyms1 libxcb-image0 libxcb-render-util0 libxcb-xinerama0
    ```
 
-   Ubuntu 22.04 does not include Python 3.12 by default: install it with your preferred Python version manager, or use Ubuntu 24.04. Other distributions have different package names. Setup does not add package repositories or require running Transcribr as root
+   Ubuntu 22.04 does not include Python 3.12 by default: install it with your preferred Python version manager, or use Ubuntu 24.04. Other distributions have different package names. Setup does not add package repositories or require running Dictately as root
 3. Download/extract the repository to a permanent folder, or clone it:
 
    ```bash
-   git clone https://github.com/AlthafTM/transcribr.git
-   cd transcribr
+   git clone https://github.com/AlthafTM/dictately.git
+   cd dictately
    bash install-desktop.sh
    ```
 
-4. Open **Transcribr** from your application menu, or run `bash start-desktop.sh`. Desktops hiding tray icons need a tray/AppIndicator extension to reach its menu
+4. Open **Dictately** from your application menu, or run `bash start-desktop.sh`. Desktops hiding tray icons need a tray/AppIndicator extension to reach its menu
 5. Select **English only** or **Indonesian only**, click a field, press **F12**, speak, then press **F12** again. **Esc** cancels the unfinished phrase; already pasted phrases remain
 
 F12 is reserved while running, so it should not also open browser developer tools. Remove conflicting window-manager shortcuts before launching. Linux uses standard **Ctrl+V** paste; terminals requiring **Ctrl+Shift+V** need manual copying from History. Running the app requires no `sudo`, `uinput` rules, or input-device permission changes.
@@ -69,9 +69,9 @@ bash install-desktop.sh --startup
 .venv-desktop/bin/python desktop_app.py --install-launcher --startup
 ```
 
-macOS writes `~/Library/LaunchAgents/dev.althafm.transcribr.plist`, effective at the next sign-in. Linux writes `~/.config/autostart/transcribr.desktop`. Disable startup by removing only that file, or disabling the desktop startup entry. Quit from the menu icon to stop the running app.
+macOS writes `~/Library/LaunchAgents/dev.althafm.dictately.plist`, effective at the next sign-in. Linux writes `~/.config/autostart/dictately.desktop`. Disable startup by removing only that file, or disabling the desktop startup entry. Quit from the menu icon to stop the running app.
 
-Quit Transcribr before switching models:
+Quit Dictately before switching models:
 
 ```bash
 .venv-desktop/bin/python desktop_app.py --install-model turbo
@@ -83,8 +83,8 @@ Downloads use a single Hugging Face revision and the Hub's snapshot/cache mechan
 
 | Data | Location |
 | --- | --- |
-| macOS models, settings, history, log | `~/Library/Application Support/Transcribr` |
-| Linux models, settings, history, log | `${XDG_DATA_HOME:-~/.local/share}/transcribr` |
+| macOS models, settings, history, log | `~/Library/Application Support/Dictately` |
+| Linux models, settings, history, log | `${XDG_DATA_HOME:-~/.local/share}/dictately` |
 | Private Python environment | `.venv-desktop` in the source folder |
 
 **History / copy transcript** lets you copy or clear the last 50 transcripts, stored on your own disk. Audio stays in memory during a session and is not saved to recordings. Clipboard contents become the latest pasted phrase. To change recognition hints, accuracy, or cleanup, quit and edit `desktop-settings.json` (`vocabulary`, `accuracy`, `cleanup`); language is `en` or `id`.
@@ -100,10 +100,14 @@ Downloads use a single Hugging Face revision and the Hub's snapshot/cache mechan
 
 ## Uninstall
 
-Quit Transcribr. Remove the launcher (`~/Applications/Transcribr.app` on macOS or `~/.local/share/applications/transcribr.desktop` on Linux) and the optional startup file above. Remove the source folder if no longer needed. Models/history/settings remain in the data folder unless you choose to remove it too. Windows installations and data are separate.
+Quit Dictately. Remove the launcher (`~/Applications/Dictately.app` on macOS or `~/.local/share/applications/dictately.desktop` on Linux) and the optional startup file above. Remove the source folder if no longer needed. Models/history/settings remain in the data folder unless you choose to remove it too. Windows installations and data are separate.
 
 ## Development approach
 
 The Rust Windows controller directly calls Win32 for audio, focus, typing, hotkeys, tray, and graphics. This frontend reuses recognition and adds Qt, PortAudio, macOS Accessibility, and X11 integration. A future Rust frontend can reuse the speech model/protocol.
 
 [Native packages must be built on their target OS](https://pyinstaller.org/en/stable/operating-mode.html). GitHub-hosted checks avoid a VM on the Windows laptop. The [recognition backend supports macOS and Linux CPUs](https://opennmt.net/CTranslate2/installation.html), and [input hooks have platform-specific restrictions](https://pynput.readthedocs.io/en/latest/limitations.html). This workflow does not publish `.dmg`, `.deb`, or AppImage packages.
+
+## Upgrading from the earlier name
+
+Quit the old application before updating the source folder and rerunning setup. Settings and history are copied to Dictately's user data directory when missing. The desktop preview does not automatically relocate model folders or remove earlier launchers: select/download a model in the new data directory through setup, and disable the old login launcher before enabling Dictately's. Keep your old files until you have confirmed the new installation works. Windows installer migration is handled separately by the native installer.

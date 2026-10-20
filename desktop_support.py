@@ -20,11 +20,11 @@ def check_platform():
     if sys.platform == "darwin":
         return
     if sys.platform != "linux":
-        raise RuntimeError("This launcher supports macOS and Linux X11; use Transcribr.exe on Windows")
+        raise RuntimeError("This launcher supports macOS and Linux X11; use Dictately.exe on Windows")
     if os.environ.get("XDG_SESSION_TYPE") == "wayland" or os.environ.get("WAYLAND_DISPLAY"):
         raise RuntimeError("Wayland is not supported yet. Sign out and choose an X11/Xorg session")
     if not os.environ.get("DISPLAY"):
-        raise RuntimeError("Open Transcribr from a graphical X11 desktop session")
+        raise RuntimeError("Open Dictately from a graphical X11 desktop session")
     missing = [name for name in ("xdotool", "xclip") if not shutil.which(name)]
     if missing:
         raise RuntimeError("Install the Linux desktop dependencies: " + ", ".join(missing))
@@ -47,9 +47,9 @@ class DesktopInput:
             import Quartz
             self.workspace, self.ax, self.quartz = NSWorkspace.sharedWorkspace(), ax, Quartz
             if not ax.AXIsProcessTrusted():
-                raise RuntimeError("Allow Transcribr/Python in System Settings > Privacy & Security > Accessibility, then restart")
+                raise RuntimeError("Allow Dictately/Python in System Settings > Privacy & Security > Accessibility, then restart")
             if not Quartz.CGPreflightListenEventAccess():
-                raise RuntimeError("Allow Transcribr/Python in Privacy & Security > Input Monitoring, then restart")
+                raise RuntimeError("Allow Dictately/Python in Privacy & Security > Input Monitoring, then restart")
         else:
             from Xlib import display
             self.display = display.Display()
@@ -113,7 +113,7 @@ def desktop_entry(command, icon):
     # Desktop Entry Exec has its own quoting rules (not shell quoting).
     def quote(value):
         return '"' + str(value).replace('\\', '\\\\').replace('"', '\\"').replace('`', '\\`').replace('$', '\\$').replace('%', '%%') + '"'
-    return "\n".join(["[Desktop Entry]", "Type=Application", "Name=Transcribr", "Comment=Local English and Indonesian voice typing",
+    return "\n".join(["[Desktop Entry]", "Type=Application", "Name=Dictately", "Comment=Local English and Indonesian voice typing",
                        "Exec=" + " ".join(quote(x) for x in command), "Icon=" + str(icon), "Terminal=false", "Categories=Utility;Accessibility;", ""])
 
 
@@ -122,37 +122,37 @@ def install_launchers(root, python, startup=False, home=None):
     home = Path(home) if home else Path.home()
     command = [str(python), str(root / "desktop_app.py")]
     if sys.platform == "darwin":
-        bundle = home / "Applications/Transcribr.app/Contents"
-        executable = bundle / "MacOS/Transcribr"
+        bundle = home / "Applications/Dictately.app/Contents"
+        executable = bundle / "MacOS/Dictately"
         executable.parent.mkdir(parents=True, exist_ok=True)
         executable.write_text("#!/bin/sh\nexec " + " ".join(shlex.quote(x) for x in command) + '\n', encoding="utf-8")
         executable.chmod(0o755)
-        (bundle / "Info.plist").write_bytes(plistlib.dumps({"CFBundleName":"Transcribr", "CFBundleIdentifier":"dev.althafm.transcribr.desktop",
-            "CFBundleExecutable":"Transcribr", "CFBundlePackageType":"APPL", "LSUIElement":True,
-            "NSMicrophoneUsageDescription":"Transcribr records speech only while you enable dictation with F12", "CFBundleIconFile":"transcribr.icns"}))
+        (bundle / "Info.plist").write_bytes(plistlib.dumps({"CFBundleName":"Dictately", "CFBundleIdentifier":"dev.althafm.dictately.desktop",
+            "CFBundleExecutable":"Dictately", "CFBundlePackageType":"APPL", "LSUIElement":True,
+            "NSMicrophoneUsageDescription":"Dictately records speech only while you enable dictation with F12", "CFBundleIconFile":"dictately.icns"}))
         # Generate a native icon with macOS's own icon compiler.
         from PySide6.QtGui import QImage
         resources = bundle / "Resources"; resources.mkdir(exist_ok=True)
         with tempfile.TemporaryDirectory() as temporary:
-            iconset=Path(temporary)/'Transcribr.iconset';iconset.mkdir()
-            image=QImage(str(root/'assets/transcribr.png'))
+            iconset=Path(temporary)/'Dictately.iconset';iconset.mkdir()
+            image=QImage(str(root/'assets/dictately.png'))
             for size in (16,32,128,256,512):
                 for scale in (1,2):
                     suffix='@2x' if scale==2 else ''
                     if not image.scaled(size*scale,size*scale).save(str(iconset/f'icon_{size}x{size}{suffix}.png')):
                         raise RuntimeError('Could not generate the application icon')
-            subprocess.run(['iconutil','--convert','icns','--output',str(resources/'transcribr.icns'),str(iconset)],check=True)
+            subprocess.run(['iconutil','--convert','icns','--output',str(resources/'dictately.icns'),str(iconset)],check=True)
         if startup:
-            agent = home / "Library/LaunchAgents/dev.althafm.transcribr.plist"
+            agent = home / "Library/LaunchAgents/dev.althafm.dictately.plist"
             agent.parent.mkdir(parents=True, exist_ok=True)
-            agent.write_bytes(plistlib.dumps({"Label":"dev.althafm.transcribr", "ProgramArguments":[str(executable)], "RunAtLoad":True}))
-        return home / "Applications/Transcribr.app"
-    entry = home / ".local/share/applications/transcribr.desktop"
+            agent.write_bytes(plistlib.dumps({"Label":"dev.althafm.dictately", "ProgramArguments":[str(executable)], "RunAtLoad":True}))
+        return home / "Applications/Dictately.app"
+    entry = home / ".local/share/applications/dictately.desktop"
     entry.parent.mkdir(parents=True, exist_ok=True)
-    entry.write_text(desktop_entry(command, root / "assets/transcribr.png"), encoding="utf-8")
+    entry.write_text(desktop_entry(command, root / "assets/dictately.png"), encoding="utf-8")
     entry.chmod(0o755)
     if startup:
-        autostart = home / ".config/autostart/transcribr.desktop"
+        autostart = home / ".config/autostart/dictately.desktop"
         autostart.parent.mkdir(parents=True, exist_ok=True)
         autostart.write_text(entry.read_text(encoding="utf-8"), encoding="utf-8")
     return entry

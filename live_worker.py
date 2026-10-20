@@ -12,19 +12,21 @@ from difflib import SequenceMatcher
 from pathlib import Path
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor
 
-from runtime_paths import app_root, configure_gpu_libraries, user_data_dir
+from runtime_paths import app_root, configure_gpu_libraries
 configure_gpu_libraries()
 
 if sys.stdout is not None:
     sys.stdout.reconfigure(encoding="utf-8")
 if sys.stdin is not None:
     sys.stdin.reconfigure(encoding="utf-8")
-from engine import Engine
 from speech_models import selected_model
 from worker_protocol import read_request
 from language_commands import BilingualBackend, language_command
+
+os.environ["HF_HUB_OFFLINE"] = "1"
+os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
+os.environ["DO_NOT_TRACK"] = "1"
 
 LANGUAGES = {"en", "id", "both"}
 
@@ -107,13 +109,21 @@ def better_decode(original, alternative, vocabulary=""):
 def emit(value):
     print(json.dumps(value, ensure_ascii=True), flush=True)
 
+class SpeechRuntime:
+    """Own only the speech model; live dictation has no rewriting server."""
+    def __init__(self):
+        self.whisper = None
+
+    def close(self):
+        self.whisper = None
+        import gc
+        gc.collect()
+
+
 class Worker:
     def __init__(self, model_root=None):
-        self.engine = Engine(user_data_dir())
+        self.engine = SpeechRuntime()
         self.model_root = Path(model_root) if model_root is not None else app_root()
-        self.cleanup_warmed = False
-        self.cleanup_future = None
-        self.cleanup_pool = None
         self.device = "cpu"
         self.force_cpu = False
         self.model_name = "unloaded"

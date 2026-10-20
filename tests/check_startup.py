@@ -28,8 +28,8 @@ def status():
 
 def main():
     baseline = "--baseline" in sys.argv
-    environment = dict(os.environ, LOCALFLOW_DATA=str(DATA), TRANSCRIBR_TEST_MIC_DELAY_MS="600")
-    process = subprocess.Popen([str(ROOT / "Transcribr.exe"), "--test-target", "0"],
+    environment = dict(os.environ, LOCALFLOW_DATA=str(DATA), DICTATELY_TEST_MIC_DELAY_MS="600")
+    process = subprocess.Popen([str(ROOT / "Dictately.exe"), "--test-target", "0"],
                                env=environment, creationflags=subprocess.CREATE_NO_WINDOW)
     try:
         deadline = time.monotonic() + 20

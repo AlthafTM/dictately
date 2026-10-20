@@ -49,6 +49,8 @@ pub struct Display {
     frame: Vec<u32>,
     content: Vec<u32>,
     background: Vec<u32>,
+    picker_background:Vec<u32>,
+    controls_dirty:bool,
     body_shades: Vec<f32>,
     rim_shades: Vec<f32>,
     edges: Vec<Edge>,
@@ -139,7 +141,7 @@ impl Display {
             picker:false,selected:0,hovered:None,logical_width:WIDTH,logical_height:HEIGHT,labels:Vec::new(),options:Vec::new(),
             rail:Vec::new(),selected_position:0.,hover_levels:[0.;3],
             bitmap:std::ptr::null_mut(),old_bitmap:std::ptr::null_mut(),pixels:std::ptr::null_mut(),frame:Vec::new(),content:Vec::new(),
-            background:Vec::new(),body_shades:Vec::new(),rim_shades:Vec::new(),edges:Vec::new(),shine:[0.;PROFILE],
+            background:Vec::new(),picker_background:Vec::new(),controls_dirty:true,body_shades:Vec::new(),rim_shades:Vec::new(),edges:Vec::new(),shine:[0.;PROFILE],
             levels:[0.;20],last_frame:now,preview_path:std::env::var_os("LOCALFLOW_PREVIEW_DIR")
                 .map(|p|std::path::PathBuf::from(p).join("glass-frame.bgra")),last_preview:now,
             frame_dir:std::env::var_os("TRANSCRIBER_ANIMATION_FRAMES").map(std::path::PathBuf::from),frame_index:0 };
@@ -164,7 +166,7 @@ impl Display {
         // Alpha supplies the rounded shape at every animation width; no fixed region to blur/clip it.
         SetWindowRgn(self.hwnd,std::ptr::null_mut(),0);
         let count=(self.rw*self.rh) as usize;
-        self.frame=vec![0;count]; self.content=vec![0;count]; self.background=vec![0;count]; self.body_shades=vec![0.;count];
+        self.frame=vec![0;count]; self.content=if self.picker {vec![0;count]}else{Vec::new()}; self.picker_background=if self.picker {vec![0;count]}else{Vec::new()}; self.controls_dirty=true; self.background=vec![0;count]; self.body_shades=vec![0.;count];
         self.rim_shades=vec![0.;count]; self.edges.clear();
         let hw=self.logical_width as f32/2.-1.; let hh=self.logical_height as f32/2.-1.;
         let radius=if self.picker {28.}else{hh};
@@ -220,10 +222,15 @@ impl Display {
         picker_option(x as f32*96./self.dpi as f32,y as f32*96./self.dpi as f32,self.panel_progress,self.content_progress)
     }
     fn render_options(&mut self,age:f32,dt:f32) {
-        self.content.fill(0);
+        let before=self.selected_position;let hover_before=self.hover_levels;
         let settle=1.-(-dt/0.065).exp();
         self.selected_position+=(self.selected as f32-self.selected_position)*settle;
         for option in 0..3 {self.hover_levels[option]+=((if self.hovered==Some(option) {1.}else{0.})-self.hover_levels[option])*settle;}
+        if (self.selected_position-self.selected as f32).abs()<0.0005 {self.selected_position=self.selected as f32;}
+        for option in 0..3 {let target=if self.hovered==Some(option) {1.}else{0.};if (self.hover_levels[option]-target).abs()<0.0005 {self.hover_levels[option]=target;}}
+        self.controls_dirty|=before!=self.selected_position || hover_before!=self.hover_levels;
+        if self.controls_dirty {
+        self.content.fill(0);
         for &(index,mask,shade) in &self.rail {
             self.content[index]=over(self.content[index],shade,mask);
         }
@@ -254,6 +261,17 @@ impl Display {
                 self.content[index]=over(self.content[index],shade,self.labels[label][(y*w+x) as usize] as f32/255.);
             }}
         }
+        self.picker_background.copy_from_slice(&self.background);
+        for (destination,source) in self.picker_background.iter_mut().zip(&self.content) {
+            if source>>24>0 {*destination=blend_content(*destination,(source&255) as f32,(source>>24) as f32,1.);}
+        }
+        self.controls_dirty=false;
+        }
+        // Only the five microphone bars change once selection and hover settle.
+        for y in (14.*self.sample_scale) as i32..(40.*self.sample_scale) as i32 {
+            let start=(y*self.rw) as usize;
+            self.content[start+(328.*self.sample_scale) as usize..start+(353.*self.sample_scale) as usize].fill(0);
+        }
         let level=self.wave.back().copied().unwrap_or(0.);
         for i in 0..5 {
             let height=4.+(level*15.+2.)*(0.5+0.5*(age*7.+i as f32).sin());let cx=330.+i as f32*5.;
@@ -277,8 +295,11 @@ impl Display {
         let opacity=self.content_progress;
         if opacity<=0. {return;}
         if self.panel_progress>=0.9999 && opacity>=0.9999 {
-            for (destination,source) in self.frame.iter_mut().zip(&self.content) {
-                if source>>24>0 {*destination=blend_content(*destination,(source&255) as f32,(source>>24) as f32,1.);}
+            for y in (14.*self.sample_scale) as i32..(40.*self.sample_scale) as i32 {
+                for x in (328.*self.sample_scale) as i32..(353.*self.sample_scale) as i32 {
+                    let index=(y*self.rw+x) as usize;let source=self.content[index];
+                    if source>>24>0 {self.frame[index]=blend_content(self.frame[index],(source&255) as f32,(source>>24) as f32,1.);}
+                }
             }
             return;
         }
@@ -332,7 +353,7 @@ impl Display {
         if !self.visible||self.closing {
             self.transition_panel=if self.visible {self.panel_progress}else{0.};
             self.transition_content=if self.visible {self.content_progress}else{0.};
-            self.animation=Instant::now();self.last_frame=Instant::now();self.visible=true;self.closing=false;self.selected_position=self.selected as f32;
+            self.animation=Instant::now();self.last_frame=Instant::now();self.visible=true;self.closing=false;self.selected_position=self.selected as f32;self.controls_dirty=true;
         }
         self.animate();
     }
@@ -352,6 +373,7 @@ impl Display {
         self.panel_progress=progress;
         self.content_progress=content_phase(age,self.closing,self.transition_content);
         let cue_age=self.cue_at.elapsed().as_secs_f32();
+        if self.picker && self.content_progress>0. {self.render_options(cue_age,dt);}
         let phase=(cue_age*0.36).fract();
         let profile=|position:f32| { let d=position-phase; let d=if d<0. {d+1.}else{d};self.shine[((d*PROFILE as f32) as usize).min(PROFILE-1)] };
         let hw=15.+(self.logical_width as f32/2.-16.)*progress;let hh=self.logical_height as f32/2.-1.;let radius=hw.min(if self.picker {28.}else{hh});
@@ -370,7 +392,7 @@ impl Display {
                 self.frame[index]=pixel;
             } }
         } else {
-            self.frame.copy_from_slice(&self.background);
+            self.frame.copy_from_slice(if self.picker && progress>=0.9999 && self.content_progress>=0.9999 {&self.picker_background}else{&self.background});
             for edge in &self.edges {
                 let pixel=self.frame[edge.index];let alpha=(pixel>>24) as f32/255.;
                 if alpha>0. { self.frame[edge.index]=premultiplied((pixel&255) as f32/alpha+profile(edge.position)*edge.strength,alpha); }
@@ -383,7 +405,7 @@ impl Display {
         let handoff=smooth((cue_age-0.12)/0.85);
         let settle=1.-(-dt/0.085).exp();
         if self.picker {
-            if self.content_progress>0. {self.render_options(cue_age,dt);self.composite_options();}
+            if self.content_progress>0. {self.composite_options();}
         } else {
         for i in 0..20 {
             let center_distance=((i as f32-9.5)/9.5).abs();let reveal=smooth((progress-center_distance*0.42)/0.58);

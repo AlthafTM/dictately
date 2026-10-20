@@ -6,9 +6,9 @@ import ctypes
 import os
 
 DICTATION_DEFAULT=0x7B
-LANGUAGE_DEFAULT=0x7A
+LANGUAGE_DEFAULT=0x79
 MODIFIERS={0x10,0x11,0x12,0x5B,0x5C,0xA0,0xA1,0xA2,0xA3,0xA4,0xA5}
-CAPTURE_EVENT='Local\\Transcribr.ShortcutCapture'
+CAPTURE_EVENT='Local\\Dictately.ShortcutCapture'
 
 
 def valid_shortcut(value):

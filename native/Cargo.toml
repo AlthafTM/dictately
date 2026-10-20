@@ -1,6 +1,7 @@
 [package]
-name = "transcribr"
-version = "0.7.0"
+name = "dictately"
+version = "0.8.0"
+license = "MIT"
 edition = "2021"
 
 [dependencies]

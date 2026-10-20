@@ -3,7 +3,7 @@ use windows_sys::Win32::{Foundation::CloseHandle,System::Threading::{OpenEventW,
 use crate::display::wide;
 
 pub static DICTATION:AtomicU32=AtomicU32::new(0x7b);
-pub static LANGUAGE:AtomicU32=AtomicU32::new(0x7a);
+pub static LANGUAGE:AtomicU32=AtomicU32::new(0x79);
 static HELD:AtomicU32=AtomicU32::new(0);
 
 pub fn valid(value:u32)->bool {
@@ -24,7 +24,7 @@ pub unsafe fn initialize() {
     for key in [160,161,162,163,164,165,91,92] {modifier(key,GetAsyncKeyState(key as i32)<0);}
 }
 pub unsafe fn capture_active()->bool {
-    let handle=OpenEventW(0x00100000,0,wide("Local\\Transcribr.ShortcutCapture").as_ptr());
+    let handle=OpenEventW(0x00100000,0,wide("Local\\Dictately.ShortcutCapture").as_ptr());
     if handle.is_null() {return false;}
     let active=WaitForSingleObject(handle,0)==0;CloseHandle(handle);active
 }
@@ -41,7 +41,7 @@ pub fn name(value:u32)->String {
 #[cfg(test)] mod tests {
     use super::*;
     #[test] fn validates_pairs_and_names() {
-        assert!(pair(123,122));assert!(pair(0x141,0x242));
+        assert!(pair(123,121));assert!(pair(0x141,0x242));
         for value in [0,27,16,162,0x1000] {assert!(!valid(value));}
         assert!(!pair(123,123));assert_eq!(name(0x341),"Ctrl+Shift+A");
     }

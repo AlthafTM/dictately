@@ -1,19 +1,19 @@
-# Transcribr compared with Wispr Flow
+# Dictately compared with Wispr Flow
 
-Assessment date: **20 October 2026**. Scope: the current Transcribr source and public Wispr Flow documentation, with Windows as the main comparison platform. This is a feature and engineering assessment, not a reverse-engineering report or a controlled accuracy competition. No Wispr account, private conversation, or customer audio was accessed.
+Assessment date: **20 October 2026**. Scope: the current Dictately source and public Wispr Flow documentation, with Windows as the main comparison platform. This is a feature and engineering assessment, not a reverse-engineering report or a controlled accuracy competition. No Wispr account, private conversation, or customer audio was accessed.
 
 ## Main finding
 
-Transcribr already provides the core local dictation loop: F12, microphone capture, an animated waveform, fixed **English** / **Indonesian**, live phrase insertion into a protected destination, conservative spoken corrections, vocabulary hints, history, and local model choices. Its main gaps are contextual editing, automatic personalization, product packaging, and measured recognition quality across real voices and applications.
+Dictately already provides the core local dictation loop: F12, microphone capture, an animated waveform, fixed **English** / **Indonesian**, live phrase insertion into a protected destination, conservative spoken corrections, vocabulary hints, history, and local model choices. Its main gaps are contextual editing, automatic personalization, product packaging, and measured recognition quality across real voices and applications.
 
 We cannot honestly give a percentage accuracy gap against Flow: neither product has been tested on the same recordings in this project. Faster transport improves efficiency; it does not make the speech model recognize words more accurately.
 
 ## At a glance: our strengths and weaknesses
 
-| Classification | What this means for a Transcribr user |
+| Classification | What this means for a Dictately user |
 | --- | --- |
 | **Our strength: local and offline** | Recognition stays on your device after setup, including when the internet is unavailable; Flow processes dictation audio in the cloud. [Flow security overview](https://docs.wisprflow.ai/articles/3467817258-security-and-compliance-faq) |
-| **Our strength: no transcription subscription** | No account, API key, or usage-based transcription bill is required by Transcribr; you supply the hardware and electricity |
+| **Our strength: no transcription subscription** | No account, API key, or usage-based transcription bill is required by Dictately; you supply the hardware and electricity |
 | **Our strength: local model control** | Choose compatible Small, Turbo, or Large-v3 weights, inspect the code, and keep models/history under your own control |
 | **Our weakness: less understanding of context** | Names, writing style, and surrounding text do not receive Flow's contextual assistance; vocabulary hints are largely manual. [Context Awareness](https://docs.wisprflow.ai/articles/4678293671-feature-context-awareness) |
 | **Our weakness: less capable editing** | Basic cleanup and recent-suffix correction do not match general voice editing, richer formatting, snippets, or automatic dictionary learning; details and sources appear below |
@@ -21,11 +21,11 @@ We cannot honestly give a percentage accuracy gap against Flow: neither product 
 | **Our tradeoff: your device does the work** | Offline operation moves inference cost onto your CPU/GPU; model loading, memory pressure, battery use, and phrase delay still matter |
 | **Not established: accuracy or speed superiority** | No matched real-speech benchmark against Flow exists here. Feature differences and synthetic tests do not prove which app recognizes your voice better |
 
-Choose Transcribr when local processing and control matter most. Expect Flow to offer more of the documented editing/personalization ecosystem. Treat recognition quality on your own speech as something to measure, rather than assume.
+Choose Dictately when local processing and control matter most. Expect Flow to offer more of the documented editing/personalization ecosystem. Treat recognition quality on your own speech as something to measure, rather than assume.
 
 ## Our weaknesses compared with Wispr Flow
 
-| Area | Transcribr today | What Flow offers / what is missing |
+| Area | Dictately today | What Flow offers / what is missing |
 | --- | --- | --- |
 | Recognition quality | One local Whisper model at a time; optional Small, Turbo, or Large-v3 | Wispr describes a recognition-model ensemble. This differs from our single-engine pipeline, but its description does not establish a measured advantage on your voice. [Wispr language research](https://wisprflow.ai/research/supporting-languages) |
 | App and text context | Editor context is used for destination verification and limited correction, not general recognition prompting | Flow uses app context and nearby text to adapt names, tone, and formatting. Windows support is partial; some capabilities remain Mac-only. [Context Awareness](https://docs.wisprflow.ai/articles/4678293671-feature-context-awareness) |
@@ -33,10 +33,10 @@ Choose Transcribr when local processing and control matter most. Expect Flow to 
 | General voice editing | Similar recent sentence replacement or explicit last-word correction; same field, verified suffix, 90-second window | Desktop Command Mode can edit text, draft replies, and search using spoken instructions. We have no equivalent arbitrary instruction mode. [Command Mode](https://docs.wisprflow.ai/articles/4816967992-how-to-use-command-mode) |
 | Dictionary learning | Users manually enter vocabulary hints; the live path does not learn from manual edits | Flow can watch post-insertion corrections when Auto-add to Dictionary is enabled. We lack that learning loop and a proper replacement dictionary. [Data controls](https://wisprflow.ai/data-controls) |
 | Reusable snippets | No phrase-to-template expansion | Flow supports spoken triggers that expand into stored snippets. This is a useful feature we could implement locally without a larger speech model. [Snippets](https://docs.wisprflow.ai/articles/5784437944-create-and-use-snippets) |
-| Language breadth | **English**, **Indonesian**, or **Both**; voice/mouse picker; Both restricts segment detection to these two languages | Flow supports 100+ languages and regional variants, and can select a language per dictation. It does not claim per-word detection in its current guide. Additional Transcribr languages are possible future work, not currently supported modes. [Languages](https://docs.wisprflow.ai/articles/3191899797) |
-| Hotkeys and input choices | Configurable keyboard shortcuts (default F12 dictation, F11 voice/mouse language picker), Esc cancellation; Windows default microphone | Flow documents configurable keyboard/mouse shortcuts and push-to-talk/hands-free controls. We still lack mouse-button bindings, push-to-talk, and an in-app microphone picker/test. [Shortcuts](https://docs.wisprflow.ai/articles/2612050838-supported-unsupported-keyboard-hotkey-shortcuts) |
+| Language breadth | **English**, **Indonesian**, or **Both**; voice/mouse picker; Both restricts segment detection to these two languages | Flow supports 100+ languages and regional variants, and can select a language per dictation. It does not claim per-word detection in its current guide. Additional Dictately languages are possible future work, not currently supported modes. [Languages](https://docs.wisprflow.ai/articles/3191899797) |
+| Hotkeys and input choices | Configurable keyboard shortcuts (default F12 dictation, F10 voice/mouse language picker), Esc cancellation; Windows default microphone | Flow documents configurable keyboard/mouse shortcuts and push-to-talk/hands-free controls. We still lack mouse-button bindings, push-to-talk, and an in-app microphone picker/test. [Shortcuts](https://docs.wisprflow.ai/articles/2612050838-supported-unsupported-keyboard-hotkey-shortcuts) |
 | Platforms | Windows x64 only | Flow is available on Mac, Windows, iOS, and Android, with platform-dependent features. We have no mobile keyboard, Mac app, or cross-device experience. [Product overview](https://docs.wisprflow.ai/articles/2772472373-what-is-flow) |
-| Team use | Local settings and manual vocabulary, no accounts or team service | Flow offers shared dictionary/snippet libraries and organization controls. Transcribr has no team synchronization or admin console. [Shared entries](https://docs.wisprflow.ai/articles/9639977157-view-shared-dictionary-words-and-snippets-in-the-admin-portal) |
+| Team use | Local settings and manual vocabulary, no accounts or team service | Flow offers shared dictionary/snippet libraries and organization controls. Dictately has no team synchronization or admin console. [Shared entries](https://docs.wisprflow.ai/articles/9639977157-view-shared-dictionary-words-and-snippets-in-the-admin-portal) |
 | Installation and maintenance | A per-user setup wizard bundles the runtime and handles model download, shortcuts, startup, and uninstall; source builds still need Python and Rust | Code signing, clean-machine installation coverage, automatic update/rollback, and a GUI model selector remain unfinished |
 | Reliability evidence | Unit tests, protocol tests, synthetic speech and disposable-editor tests; known browser/custom-editor variability | We lack a broad, versioned compatibility matrix and real-speech accuracy/latency suite. Flow also documents app, network, and language limitations; neither should be described as infallible. [Flow limitations](https://docs.wisprflow.ai/articles/4048537120-what-to-expect-from-flow-accuracy-and-known-limitations) |
 
@@ -44,7 +44,7 @@ Choose Transcribr when local processing and control matter most. Expect Flow to 
 
 **Local/offline recognition:** after installation, audio is processed on your own device. Normal dictation does not save audio files. Flow's security documentation explicitly says it processes dictation audio in the cloud; privacy and retention controls do not turn cloud inference into offline inference. [Flow security overview](https://docs.wisprflow.ai/articles/3467817258-security-and-compliance-faq)
 
-**No transcription subscription or API key:** Transcribr's runtime has no cloud per-minute bill. Local hardware, storage, electricity, and installation effort remain costs. Model weights and dependencies have their own licenses; see [third-party notices](../THIRD_PARTY.md).
+**No transcription subscription or API key:** Dictately's runtime has no cloud per-minute bill. Local hardware, storage, electricity, and installation effort remain costs. Model weights and dependencies have their own licenses; see [third-party notices](../THIRD_PARTY.md).
 
 **Explicit local model choice:** users can change compatible Whisper models and keep their data on the device. The default is the tested Turbo setup; selecting a bigger model is an experiment, not a guarantee of better dictation. See [AI model setup](AI-MODELS.md).
 
@@ -103,7 +103,13 @@ Validation also checked real sample collection, cancellation during a pending op
 3. **Add a real local dictionary and snippets.** Store explicit replacements and phrase expansions; let users approve learned terms and undo replacements. This helps names and repetitive workflows without loading a second large AI model
 4. **Improve local context carefully.** Offer opt-in nearby-text hints for names and terms, with a small bounded context window and password exclusions. Preserve the existing original-field checks. Do not copy full conversations merely to improve spelling
 5. **Add optional semantic editing separately.** A local editor could resolve more false starts and format lists, but it adds model memory, latency, and the possibility of changing meaning. Keep literal dictation available, verify numbers/negation, and make undo possible
-6. **Finish usability and distribution.** The basic installer now bundles the runtime and handles first-run setup. Add a GUI model selector, configurable hotkeys, microphone selection/test, history opt-out, code signing, and a tested update/rollback path
+6. **Finish usability and distribution.** The basic installer now bundles the runtime and handles first-run setup. Configurable Windows hotkeys are now implemented. Add a GUI model selector, microphone selection/test, history opt-out, code signing, and a tested update/rollback path
 7. **Expand languages after validation.** Add one explicit language mode at a time with native-speaker test cases; preserve manual language locking. The underlying multilingual model alone is not proof the app's cleanup/corrections support a new language correctly
 
 The highest-value next step is measuring recognition on your voice and fixing vocabulary/context errors. More waveform polish or smaller transport buffers cannot by themselves close the semantic-editing gap.
+
+## Dictately 0.8 follow-up
+
+The project is now named **Dictately**, a local live dictation tool, and its original code is MIT licensed. [How it works](HOW-IT-WORKS.md) identifies the speech model, inference libraries, phrase-confirmation behavior, and privacy limits.
+
+Picker caching reduced median process CPU time by **32.7%** for one isolated UI sequence on the development laptop, using four runs per version. Silence/mouse selection no longer triggers new model preparation after unload; the live worker also avoids the unused rewriting-engine initialization. [Method and limits](DEVELOPMENT.md#dictately-08-optimization-measurements) document these results. These improve resource use but do not demonstrate higher recognition accuracy or parity with Flow's semantic editing.

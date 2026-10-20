@@ -1,4 +1,4 @@
-"""Generate Transcribr's five-bar waveform and white/grey gradient rim."""
+"""Generate Dictately's five-bar waveform and white/grey gradient rim."""
 from pathlib import Path
 import math
 from PIL import Image, ImageDraw, ImageFilter
@@ -34,5 +34,5 @@ for y in range(size):
     value=round(255-43*y/(size-1));draw.line((0,y,size,y),fill=(value,value,value,255))
 image.paste(wave,(0,0),bars)
 image.putalpha(outer)
-image.save(root/'transcribr.ico',sizes=[(16,16),(20,20),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])
-image.resize((512,512),Image.Resampling.LANCZOS).save(root/'transcribr.png')
+image.save(root/'dictately.ico',sizes=[(16,16),(20,20),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])
+image.resize((512,512),Image.Resampling.LANCZOS).save(root/'dictately.png')

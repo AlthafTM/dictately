@@ -98,8 +98,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "transcribr"
-version = "0.7.0"
+name = "dictately"
+version = "0.8.0"
 dependencies = [
  "serde",
  "serde_json",

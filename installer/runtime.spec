@@ -26,13 +26,13 @@ worker = Analysis([str(root / "installer_worker.py")], pathex=[str(root)],
                   excludes=["torch", "tensorflow", "matplotlib", "IPython", "pytest"])
 worker_pyz = PYZ(worker.pure)
 worker_exe = EXE(worker_pyz, worker.scripts, [], exclude_binaries=True,
-                 name="TranscribrWorker", console=True, upx=False,
-                 icon=str(root / "assets/transcribr.ico"))
-COLLECT(worker_exe, worker.binaries, worker.datas, name="TranscribrWorker", upx=False)
+                 name="DictatelyWorker", console=True, upx=False,
+                 icon=str(root / "assets/dictately.ico"))
+COLLECT(worker_exe, worker.binaries, worker.datas, name="DictatelyWorker", upx=False)
 
 settings = Analysis([str(root / "settings_window.py")], pathex=[str(root)])
 settings_pyz = PYZ(settings.pure)
 settings_exe = EXE(settings_pyz, settings.scripts, [], exclude_binaries=True,
-                   name="TranscribrSettings", console=False, upx=False,
-                   icon=str(root / "assets/transcribr.ico"))
-COLLECT(settings_exe, settings.binaries, settings.datas, name="TranscribrSettings", upx=False)
+                   name="DictatelySettings", console=False, upx=False,
+                   icon=str(root / "assets/dictately.ico"))
+COLLECT(settings_exe, settings.binaries, settings.datas, name="DictatelySettings", upx=False)

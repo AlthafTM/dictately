@@ -15,11 +15,40 @@ class InstallerSupportTests(unittest.TestCase):
     def test_relocated_frozen_root_and_explicit_override(self):
         with TemporaryDirectory() as temporary, patch.dict(os.environ):
             root = Path(temporary).resolve()
-            os.environ.pop("TRANSCRIBR_ROOT", None)
-            with patch.object(sys, "frozen", True, create=True), patch.object(sys, "executable", str(root / "runtime/worker/TranscribrWorker.exe")):
+            os.environ.pop("DICTATELY_ROOT", None)
+            with patch.object(sys, "frozen", True, create=True), patch.object(sys, "executable", str(root / "runtime/worker/DictatelyWorker.exe")):
                 self.assertEqual(runtime_paths.app_root(), root)
-                os.environ["TRANSCRIBR_ROOT"] = str(root / "override")
+                os.environ["DICTATELY_ROOT"] = str(root / "override")
                 self.assertEqual(runtime_paths.app_root(), root / "override")
+
+    def test_rename_migrates_history_without_overwriting_new_preferences(self):
+        with TemporaryDirectory() as temporary, patch.dict(os.environ, {"LOCALAPPDATA":temporary},clear=True), patch('sys.platform','win32'):
+            parent=Path(temporary);old=parent/'Transcribr';old.mkdir()
+            (old/'settings.json').write_text('{"language":"id"}')
+            (old/'history.json').write_text('[{"raw":"keep this"}]')
+            new=parent/'Dictately';new.mkdir()
+            (new/'settings.json').write_text('{"language":"both"}')
+            self.assertEqual(runtime_paths.user_data_dir(),new)
+            self.assertEqual(json.loads((new/'settings.json').read_text())['language'],'both')
+            self.assertEqual((new/'history.json').read_bytes(),(old/'history.json').read_bytes())
+            self.assertTrue((old/'settings.json').exists())
+
+    def test_legacy_default_changes_to_f10_without_stealing_a_custom_key(self):
+        for dictation,language,expected in [(123,122,121),(121,122,122),(123,888,888)]:
+            with self.subTest(dictation=dictation,language=language), TemporaryDirectory() as temporary, patch.dict(os.environ,{"LOCALAPPDATA":temporary},clear=True), patch('sys.platform','win32'):
+                old=Path(temporary)/'Transcribr';old.mkdir()
+                (old/'settings.json').write_text(json.dumps({'dictation_hotkey':dictation,'language_hotkey':language}))
+                new=runtime_paths.user_data_dir()
+                self.assertEqual(json.loads((new/'settings.json').read_text())['language_hotkey'],expected)
+                self.assertEqual(json.loads((old/'settings.json').read_text())['language_hotkey'],language)
+
+    def test_explicit_data_directory_never_imports_personal_history(self):
+        with TemporaryDirectory() as temporary, patch.dict(os.environ,clear=True), patch('sys.platform','win32'):
+            parent=Path(temporary);old=parent/'Transcribr';old.mkdir()
+            (old/'history.json').write_text('[{"raw":"private"}]')
+            os.environ.update(LOCALAPPDATA=temporary,DICTATELY_DATA=str(parent/'isolated'))
+            self.assertEqual(runtime_paths.user_data_dir(),parent/'isolated')
+            self.assertFalse((parent/'isolated/history.json').exists())
 
     def test_invalid_partial_download_is_repaired_on_retry(self):
         with TemporaryDirectory() as temporary:

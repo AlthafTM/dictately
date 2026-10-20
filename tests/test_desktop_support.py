@@ -36,19 +36,19 @@ class DesktopTests(unittest.TestCase):
         home=Path.home()
         with patch.object(Path,'home',return_value=home):
             with patch.dict(os.environ,clear=True),patch('sys.platform','darwin'):
-                self.assertEqual(user_data_dir(),home/'Library/Application Support/Transcribr')
+                self.assertEqual(user_data_dir(),home/'Library/Application Support/Dictately')
             with patch.dict(os.environ,{'XDG_DATA_HOME':'/tmp/xdg'},clear=True),patch('sys.platform','linux'):
-                self.assertEqual(user_data_dir(),Path('/tmp/xdg/transcribr'))
+                self.assertEqual(user_data_dir(),Path('/tmp/xdg/dictately'))
 
     def test_launcher_quotes_paths_and_handles_desktop_field_codes(self):
-        with TemporaryDirectory(prefix='Transcribr space ') as temporary,patch('sys.platform','linux'):
+        with TemporaryDirectory(prefix='Dictately space ') as temporary,patch('sys.platform','linux'):
             root=Path(temporary)
             launcher=desktop_support.install_launchers(root,root/'venv/bin/python',True,home=root/'home')
             text=launcher.read_text()
             self.assertIn('Terminal=false',text)
             self.assertIn('Exec="',text)
             self.assertIn('desktop_app.py"',text)
-            self.assertEqual(text,(root/'home/.config/autostart/transcribr.desktop').read_text())
+            self.assertEqual(text,(root/'home/.config/autostart/dictately.desktop').read_text())
         self.assertIn('%%',desktop_support.desktop_entry(['/tmp/100%/python'], '/tmp/icon.png'))
 
     def test_input_refuses_focus_changes_before_touching_clipboard(self):

@@ -112,9 +112,9 @@ def main():
     (QA / "speech.pcm").write_bytes(pcm)
     (QA / "settings.json").write_text(json.dumps({"language": "en", "cleanup": True}))
     environment = dict(os.environ, LOCALFLOW_DATA=str(QA), LOCALFLOW_PREVIEW_DIR=str(QA))
-    executable = (Path(sys.argv[sys.argv.index("--app-dir") + 1]) / "Transcribr.exe") if "--app-dir" in sys.argv else ROOT / "native/target/release/transcribr.exe"
+    executable = (Path(sys.argv[sys.argv.index("--app-dir") + 1]) / "Dictately.exe") if "--app-dir" in sys.argv else ROOT / "native/target/release/dictately.exe"
     before = u.GetForegroundWindow()
-    parent = u.CreateWindowExW(0, "STATIC", "Transcribr disposable native editor", 0x00CF0000, 100, 100, 750, 450, None, None, None, None)
+    parent = u.CreateWindowExW(0, "STATIC", "Dictately disposable native editor", 0x00CF0000, 100, 100, 750, 450, None, None, None, None)
     editor = u.CreateWindowExW(0x200, "EDIT", "", 0x503010C4, 20, 20, 690, 160, parent, None, None, None)
     editor2 = u.CreateWindowExW(0x200, "EDIT", "", 0x503010C4, 20, 210, 690, 160, parent, None, None, None)
     assert parent and editor and editor2

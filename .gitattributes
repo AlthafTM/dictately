@@ -9,3 +9,10 @@
 *.ico binary
 *.sh text eol=lf
 *.command text eol=lf
+*.yml text eol=lf
+*.json text eol=lf
+*.cs text eol=lf
+*.rc text eol=lf
+*.manifest text eol=lf
+*.spec text eol=lf
+*.lock text eol=lf

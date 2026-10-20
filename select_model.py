@@ -35,7 +35,7 @@ def main():
     temporary = selection.with_suffix(".tmp")
     temporary.write_text(json.dumps({"model": args.model}), encoding="utf-8")
     temporary.replace(selection)
-    print(f"Selected {args.model}. Restart Transcribr to apply. Dictation stays local/offline.")
+    print(f"Selected {args.model}. Restart Dictately to apply. Dictation stays local/offline.")
 
 
 if __name__ == "__main__":

@@ -15,21 +15,21 @@ The installer is a per-user Windows setup executable. It bundles independent on-
 .\build-installer.ps1 -SkipFreeze
 ```
 
-Output: `dist/Transcribr-<version>-Setup.exe` and `.exe.sha256`. The checked-in `installer/runtime.spec` controls PyInstaller collection; `assets/package-files.json` is the app-file allowlist shared by ZIP and installer packaging. The installer contains the runtime but downloads the verified Turbo weights on first installation. PyInstaller builds are on-directory, avoiding per-launch extraction overhead.
+Output: `dist/Dictately-<version>-Setup.exe` and `.exe.sha256`. The checked-in `installer/runtime.spec` controls PyInstaller collection; `assets/package-files.json` is the app-file allowlist shared by ZIP and installer packaging. The installer contains the runtime but downloads the verified Turbo weights on first installation. PyInstaller builds are on-directory, avoiding per-launch extraction overhead.
 
-Setup offers a folder picker, optional sign-in startup, and optional launch. It creates a Start menu shortcut and a per-user Installed Apps entry. Installation folders must be empty or have the matching Transcribr ownership marker. A marker tracks installed files for repair/uninstall; uninstallation preserves the separate `%LOCALAPPDATA%/Transcribr` settings/history. The optional model-removal path rejects linked directories. Future signing/update support remains separate work.
+Setup offers a folder picker, optional sign-in startup, and optional launch. It creates a Start menu shortcut and a per-user Installed Apps entry. Installation folders must be empty or have the matching Dictately ownership marker. A marker tracks installed files for repair/uninstall; uninstallation preserves the separate `%LOCALAPPDATA%/Dictately` settings/history. The optional model-removal path rejects linked directories. Future signing/update support remains separate work.
 
 For automated validation in a **new disposable folder**, the installer accepts:
 
 ```powershell
-.\dist\Transcribr-0.7.0-Setup.exe --silent --dir "C:\path\to\disposable-install" --no-launch --no-startup
+.\dist\Dictately-0.7.0-Setup.exe --silent --dir "C:\path\to\disposable-install" --no-launch --no-startup
 ```
 
 `--model-cache "C:\path\to\verified-Turbo-files"` allows an offline/cached setup test. Each source model file is checked against the pinned SHA-256 manifest before copying; the normal downloader verifies it again. This does not skip integrity checks. `--preview "C:\path\to\preview.png"` renders the setup window without installation.
 
 Test install, frozen CUDA/CPU inference, native controller startup, settings UI startup, repair, and uninstall in that folder. Preserve/restore any existing Start menu shortcut and startup/Installed Apps registry values during local tests; an installer intentionally manages those per-user entries. Never point an uninstall test at a source checkout. A clean-folder test on the development device does not replace a fresh Windows VM test.
 
-Installed model selection can use `runtime/worker/TranscribrWorker.exe --select-model <turbo|small|large-v3>`. `--self-check` loads the selected local model and reports the backend, without recording or typing. The worker protocol remains compatible with the source installation.
+Installed model selection can use `runtime/worker/DictatelyWorker.exe --select-model <turbo|small|large-v3>`. `--self-check` loads the selected local model and reports the backend, without recording or typing. The worker protocol remains compatible with the source installation.
 
 ## Source development checks
 
@@ -55,7 +55,7 @@ The model-free Python tests use mock speech results. They cover fixed language s
 
 ```powershell
 # Save microphone sample-count metadata only, without recording an audio file
-.\Transcribr.exe --check-mic
+.\Dictately.exe --check-mic
 
 # Lifecycle smoke test (typing disabled)
 .\.venv\Scripts\python.exe test_lifecycle.py
@@ -77,7 +77,7 @@ To package a release:
 
 The archive contains the Windows executable, Python worker/settings sources, setup script, icon, pinned model manifest, and notices. It excludes the private Python environment, model weights, local logs, and history. Setup downloads dependencies and weights on the recipient's computer. Test release installation in a fresh extracted directory before publishing a release.
 
-Runtime code retains the `LOCALFLOW_DATA` environment override for isolated developer tests. Normal installations use `%LOCALAPPDATA%\Transcribr`. Old experimental Python UI and generative-cleanup tools on the development machine are not distributed or used by the native app.
+Runtime code retains the `LOCALFLOW_DATA` environment override for isolated developer tests. Normal installations use `%LOCALAPPDATA%\Dictately`. Old experimental Python UI and generative-cleanup tools on the development machine are not distributed or used by the native app.
 
 Worker transport uses newline-terminated JSON control headers. Recognition headers specify `audio_format: "s16le"` and `audio_samples`; exactly twice that count of PCM bytes follows immediately. Responses remain JSON lines. Use binary stdin reads so newline bytes inside PCM cannot desynchronize frames. Legacy JSON requests with `samples` remain accepted for development tools. Update the native controller and Python worker together when changing the protocol.
 
@@ -86,3 +86,13 @@ Run the receive/parsing microbenchmark with `.\.venv\Scripts\python.exe tests/be
 Microphone open/start/stop/close operations belong to a dedicated audio thread, separate from both the UI/hotkey thread and inference. Shared sample buffers use `Arc`; WinMM handles stay on their owner thread. Open/close completions carry a session ID, queued starts check the current cancellation token before opening/recording, and final recognition waits for the stop-tail event.
 
 With the normal app stopped, run `.\.venv\Scripts\python.exe tests/check_startup.py` for a real-microphone responsiveness test without text insertion or audio-file storage. It adds 600 ms to microphone opening, checks UI pings and the waveform, cancels a pending start, restarts, and checks final stop/sample collection. The delay override is accepted only in `--test-target 0` mode. `--baseline` records timings for older executables; it does not enforce the new protocol/status checks. Test results stay under ignored `qa/startup`.
+
+## Dictately 0.8 optimization measurements
+
+The language picker caches unchanged labels, the segmented rail, and the selected pill. Once entry/selection/hover settle, only the small microphone region is composited over the cached panel; transitions retain supersampled interpolation. The smaller dictation overlay does not allocate the picker-only content buffers. PCM transport also writes the existing contiguous little-endian sample bytes without allocating a second byte vector.
+
+A local comparison used the previous 0.7 executable and the new 0.8 executable with the same `--preview-language-panel` sequence: 45 display updates, then 24 closing updates, with no microphone, recognition, or frame-file recording. Four runs per executable at 175% Windows scaling used process kernel+user CPU time. Median CPU time was **765.6 ms before / 515.6 ms after**, a **32.7% reduction for that UI sequence**. Wall-time measurements varied with desktop scheduling and are not a frame-rate guarantee. This does not measure transcription speed, accuracy, or whole-app battery use.
+
+The live worker now owns only its speech model, avoiding initialization/imports for the unused generative rewriting server. Opening the language picker does not enqueue model preparation; silence keeps only a 200 ms audio lead-in and does not repeatedly run speech recognition. Mouse selection can operate after the model has unloaded without reloading it. Voice selection starts recognition asynchronously after microphone activity.
+
+Use `DICTATELY_DATA` / `DICTATELY_ROOT` for explicit development directories; legacy `LOCALFLOW_DATA` / `TRANSCRIBR_ROOT` overrides remain accepted. The new installer accepts the old managed install marker and reuses the model folder. User settings/history are copied to the new data directory only when missing. Branding compatibility strings in migration code are intentional.

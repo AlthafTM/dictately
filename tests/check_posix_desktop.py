@@ -17,7 +17,7 @@ def x11_routing():
     import threading
     app=QApplication([])
     first=QLineEdit();second=QLineEdit()
-    first.setWindowTitle('Transcribr synthetic destination A');second.setWindowTitle('Transcribr synthetic destination B')
+    first.setWindowTitle('Dictately synthetic destination A');second.setWindowTitle('Dictately synthetic destination B')
     first.show();second.show()
     backend=DesktopInput();state={};failures=[];toggled=threading.Event()
     hooks=start_hotkey(toggled.set,lambda:None)
@@ -27,13 +27,13 @@ def x11_routing():
     def step_one():
         try:
             activate(first);state['target']=backend.destination()
-            backend.paste(state['target'],'Transcribr native typing check')
+            backend.paste(state['target'],'Dictately native typing check')
             subprocess.run(['xdotool','key','F12'],check=True,timeout=5)
             QTimer.singleShot(600,step_two)
         except Exception as error:failures.append(error);app.quit()
     def step_two():
         try:
-            assert first.text()=='Transcribr native typing check',repr(first.text())
+            assert first.text()=='Dictately native typing check',repr(first.text())
             assert toggled.is_set(),'F12 was not received'
             activate(second)
             try:backend.paste(state['target'],'must never appear')
@@ -62,7 +62,7 @@ def main():
         assert AppKit.NSWorkspace.sharedWorkspace() is not None
     with tempfile.TemporaryDirectory() as temporary:
         image=ROOT/'qa/desktop-waveform.png';image.parent.mkdir(exist_ok=True)
-        env=dict(os.environ,LOCALFLOW_DATA=temporary,QT_QPA_PLATFORM='offscreen',TRANSCRIBR_SMOKE_IMAGE=str(image))
+        env=dict(os.environ,LOCALFLOW_DATA=temporary,QT_QPA_PLATFORM='offscreen',DICTATELY_SMOKE_IMAGE=str(image))
         subprocess.run([sys.executable,str(ROOT/'desktop_app.py'),'--smoke-test'],env=env,check=True,timeout=30)
         assert image.is_file()
         subprocess.run([sys.executable,str(ROOT/'tests/check_desktop_lifecycle.py')],env=env,check=True,timeout=30)

@@ -38,20 +38,20 @@ jobs:
           python -m unittest test_live_worker -q
           python -m unittest discover -s tests -p 'test_*.py' -q
       - name: Check launch scripts
-        run: bash -n install-desktop.sh start-desktop.sh 'Install Transcribr.command' 'Start Transcribr.command'
+        run: bash -n install-desktop.sh start-desktop.sh 'Install Dictately.command' 'Start Dictately.command'
       - name: Native desktop smoke test
         run: python tests/check_posix_desktop.py
       - name: Upload source launchers and guide
         uses: actions/upload-artifact@v4
         with:
-          name: Transcribr-desktop-source-${{ matrix.os }}
+          name: Dictately-desktop-source-${{ matrix.os }}
           path: |
             *.py
             requirements.txt
             requirements-desktop.txt
-            *Transcribr.command
+            *Dictately.command
             *desktop.sh
-            assets/transcribr.png
+            assets/dictately.png
             docs/MACOS-LINUX.md
       - name: Waveform preview
         if: always()

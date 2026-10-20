@@ -1,6 +1,6 @@
 # Third-party software and models
 
-Transcribr uses these independently licensed components. Source links are provided for complete terms; this document does not replace their licenses.
+Dictately's original application code is licensed under the [MIT License](LICENSE). That license does not replace the independently licensed components below. Source links are provided for complete terms; this document does not replace their licenses.
 
 | Component | Purpose | License / source |
 | --- | --- | --- |
@@ -21,6 +21,6 @@ Transcribr uses these independently licensed components. Source links are provid
 | pynput | Experimental desktop hotkeys | LGPL-3.0; [source](https://github.com/moses-palmer/pynput) |
 | PyObjC / python-xlib | macOS Accessibility / X11 integration | [PyObjC](https://github.com/ronaldoussoren/pyobjc), [python-xlib](https://github.com/python-xlib/python-xlib); installed package notices apply |
 
-Python packages install into the recipient's private environment with their own notices. GPU libraries and model weights are not included in the Git repository or release ZIP. No rights to third-party software are granted beyond their respective licenses.
+Python packages install into the recipient's private environment with their own notices. GPU libraries and model weights are not included in the Git repository or manual release ZIP. The Windows installer includes NVIDIA runtime libraries under NVIDIA terms; speech weights are downloaded during setup. No rights to third-party software are granted beyond their respective licenses.
 
-The phrase-confirmation design is informed by [Whisper-Streaming's local-agreement approach](https://github.com/ufal/whisper_streaming); Transcribr's controller and phrase handling are implemented in this repository.
+The phrase-confirmation design is informed by [Whisper-Streaming's local-agreement approach](https://github.com/ufal/whisper_streaming); Dictately's controller and phrase handling are implemented in this repository.

@@ -54,19 +54,18 @@ class BilingualTests(unittest.TestCase):
         self.assertEqual(quick_cleanup("Saya saya tidak mau kirim."), "Saya tidak mau kirim.")
         self.assertEqual(quick_cleanup("This is very, very important."), "This is very, very important.")
 
-    def test_speech_ready_does_not_wait_for_cleanup_warmup(self):
-        from threading import Event
-        gate = Event()
+    def test_speech_runtime_releases_model_without_a_rewriting_server(self):
+        import weakref
+        class Model: pass
         worker = Worker()
-        worker.prepare = lambda: None
-        worker.engine._cleanup = lambda *args: gate.wait(5)
-        try:
-            self.assertEqual(worker.process({"command":"prepare", "cleanup":True})["type"], "ready")
-            self.assertIsNone(worker.cleanup_future)
-        finally:
-            gate.set()
-            if worker.cleanup_future:
-                worker.cleanup_future.result(timeout=2)
+        model = Model()
+        reference = weakref.ref(model)
+        worker.engine.whisper = model
+        del model
+        self.assertIsNotNone(reference())
+        worker.engine.close()
+        self.assertIsNone(reference())
+        self.assertFalse(hasattr(worker.engine, "server"))
 
     def test_unstable_tail_is_not_inserted(self):
         worker = Worker()

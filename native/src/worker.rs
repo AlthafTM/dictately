@@ -16,8 +16,16 @@ fn write_request(output: &mut impl Write, metadata: &Value, samples: Option<&[i1
     output.write_all(b"\n").map_err(|e| e.to_string())?;
     if let Some(samples) = samples {
         // Encode on the worker thread; the UI only copies its contiguous i16 buffer.
-        let bytes: Vec<u8> = samples.iter().flat_map(|sample| sample.to_le_bytes()).collect();
-        output.write_all(&bytes).map_err(|e| e.to_string())?;
+        #[cfg(target_endian="little")]
+        // SAFETY: i16 samples occupy initialized contiguous bytes. Windows builds
+        // are little-endian, matching the wire format; the slice cannot outlive
+        // the borrowed samples and is written synchronously on this thread.
+        let bytes=unsafe {std::slice::from_raw_parts(samples.as_ptr().cast::<u8>(),std::mem::size_of_val(samples))};
+        #[cfg(not(target_endian="little"))]
+        let storage:Vec<u8>=samples.iter().flat_map(|sample|sample.to_le_bytes()).collect();
+        #[cfg(not(target_endian="little"))]
+        let bytes=storage.as_slice();
+        output.write_all(bytes).map_err(|e| e.to_string())?;
     }
     output.flush().map_err(|e| e.to_string())
 }
@@ -26,14 +34,14 @@ struct Process { child: Child, input: ChildStdin, output: BufReader<ChildStdout>
 impl Process {
     fn start(root: &PathBuf, data: &PathBuf) -> Result<Self, String> {
         let log = OpenOptions::new().create(true).append(true).open(data.join("live-worker.log")).map_err(|e| e.to_string())?;
-        let bundled = root.join("runtime/worker/TranscribrWorker.exe");
+        let bundled = root.join("runtime/worker/DictatelyWorker.exe");
         let mut command = if bundled.is_file() { Command::new(bundled) } else {
             let mut python = Command::new(root.join(".venv/Scripts/python.exe"));
             python.arg(root.join("live_worker.py")); python
         };
         let mut child = command
             .current_dir(root).creation_flags(0x08000000).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(log)
-            .env("PYTHONIOENCODING", "utf-8").env("TRANSCRIBR_ROOT", root).env("LOCALFLOW_DATA", data).spawn().map_err(|e| e.to_string())?;
+            .env("PYTHONIOENCODING", "utf-8").env("DICTATELY_ROOT", root).env("LOCALFLOW_DATA", data).spawn().map_err(|e| e.to_string())?;
         unsafe {
             let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
             let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();

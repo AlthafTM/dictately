@@ -1,16 +1,16 @@
 # Local AI models: choose, install, and switch
 
-Transcribr runs speech recognition **locally on your computer**. These options do not use a cloud transcription API, require an API key, or charge per minute. Internet access is needed to download dependencies and model files; afterward the worker loads local files only. Electricity, storage, and hardware are your own costs.
+Dictately runs speech recognition **locally on your computer**. These options do not use a cloud transcription API, require an API key, or charge per minute. Internet access is needed to download dependencies and model files; afterward the worker loads local files only. Electricity, storage, and hardware are your own costs.
 
 ## Which model should I choose?
 
 | Option | Use it for | Tradeoff |
 | --- | --- | --- |
-| `turbo` — Whisper large-v3-turbo | Default everyday dictation, especially with an NVIDIA GPU | A practical speed/accuracy balance; approximately 1.6 GB weight download |
-| `small` — Whisper Small multilingual | Lower memory use or trying CPU-only dictation | Smaller model, but recognition can be less accurate; not the English-only `small.en` model |
-| `large-v3` — full Whisper large-v3 | Testing whether a larger decoder reduces mistakes on your voice | More storage, memory, and processing; live output may lag more |
+| `turbo`: Whisper large-v3-turbo | Default everyday dictation, especially with an NVIDIA GPU | A practical speed/accuracy balance; approximately 1.6 GB weight download |
+| `small`: Whisper Small multilingual | Lower memory use or trying CPU-only dictation | Smaller model, but recognition can be less accurate; not the English-only `small.en` model |
+| `large-v3`: full Whisper large-v3 | Testing whether a larger decoder reduces mistakes on your voice | More storage, memory, and processing; live output may lag more |
 
-All three use the same Windows **English / Indonesian / Both** controls, F11 voice/mouse picker, configurable F12/F11 defaults, local history, corrections, and destination protection. Both constrains per-segment detection to English/Indonesian; installing a model does not add other supported languages.
+All three use the same Windows **English / Indonesian / Both** controls, F10 voice/mouse picker, configurable F12/F10 defaults, local history, corrections, and destination protection. Both constrains per-segment detection to English/Indonesian; installing a model does not add other supported languages.
 
 Turbo is a pruned version of Large-v3 with 4 decoder layers instead of 32, trading some quality for speed: see the [Turbo model card](https://huggingface.co/openai/whisper-large-v3-turbo). The optional [Small](https://huggingface.co/Systran/faster-whisper-small) and [Large-v3](https://huggingface.co/Systran/faster-whisper-large-v3) packages are CTranslate2 conversions compatible with the existing worker.
 
@@ -22,15 +22,15 @@ On the development laptop (RTX 3050 6 GB, about 16 GB system RAM), Turbo is the 
 2. Stop recording, then choose **Quit** in the tray menu, or run the following in PowerShell from the app folder
 
    ```powershell
-   & '.\Stop Transcribr.ps1'
+   & '.\Stop Dictately.ps1'
    ```
 
 3. Download and select **one** model. **Installer users** use the included worker:
 
    ```powershell
    # Choose one
-   .\runtime\worker\TranscribrWorker.exe --select-model small
-   .\runtime\worker\TranscribrWorker.exe --select-model large-v3
+   .\runtime\worker\DictatelyWorker.exe --select-model small
+   .\runtime\worker\DictatelyWorker.exe --select-model large-v3
    ```
 
    **Source/manual ZIP users** use the private Python environment instead:
@@ -45,22 +45,22 @@ On the development laptop (RTX 3050 6 GB, about 16 GB system RAM), Turbo is the 
 
    Wait for `Selected ...` before continuing. First installation requires internet and can take time. The script selects the model only after the download succeeds; a failed download leaves your existing selection intact. Run the same command again to resume/reuse the download
 
-4. Open `Start Transcribr.vbs`, choose English or Indonesian from the tray menu, click a text field, and press F12
+4. Open `Start Dictately.vbs`, choose English or Indonesian from the tray menu, click a text field, and press F12
 5. Compare the same phrases with your previous model. Check names, numbers, negation, and the delay before text appears. A larger model is not guaranteed to win on every phrase
 
 ### Return to the default
 
-Quit Transcribr, then run:
+Quit Dictately, then run:
 
 ```powershell
 # Installer users
-.\runtime\worker\TranscribrWorker.exe --select-model turbo
+.\runtime\worker\DictatelyWorker.exe --select-model turbo
 
 # Source/manual ZIP users, instead
 .\.venv\Scripts\python.exe select_model.py turbo
 ```
 
-Launch `Start Transcribr.vbs` again. This reuses/verifies the pinned Turbo download from setup. You do not need to rebuild Rust or reinstall the app to switch models.
+Launch `Start Dictately.vbs` again. This reuses/verifies the pinned Turbo download from setup. You do not need to rebuild Rust or reinstall the app to switch models.
 
 ## Where the files go
 
@@ -78,7 +78,7 @@ Keep the selected folder intact. To free space, quit the app, switch to a differ
 
 ## Other engines and custom models
 
-Qwen3-ASR is a separate engine, **not** a drop-in model for faster-whisper. Its [official model card](https://huggingface.co/Qwen/Qwen3-ASR-0.6B) lists English and Indonesian support and describes its streaming backend. Transcribr does not currently include that backend. Copying its weights into a Whisper folder will not work.
+Qwen3-ASR is a separate engine, **not** a drop-in model for faster-whisper. Its [official model card](https://huggingface.co/Qwen/Qwen3-ASR-0.6B) lists English and Indonesian support and describes its streaming backend. Dictately does not currently include that backend. Copying its weights into a Whisper folder will not work.
 
 For contributors implementing another engine:
 

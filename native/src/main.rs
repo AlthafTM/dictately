@@ -30,13 +30,13 @@ static mut APP: *mut App = std::ptr::null_mut();
 #[serde(default)]
 struct Settings { language: String, cleanup: bool, accuracy: bool, vocabulary: String, max_recording_seconds: u32, dictation_hotkey:u32, language_hotkey:u32 }
 impl Default for Settings {
-    fn default() -> Self { Self { language: "en".into(), cleanup: true, accuracy: true, vocabulary: String::new(), max_recording_seconds: 120, dictation_hotkey:123,language_hotkey:122 } }
+    fn default() -> Self { Self { language: "en".into(), cleanup: true, accuracy: true, vocabulary: String::new(), max_recording_seconds: 120, dictation_hotkey:123,language_hotkey:121 } }
 }
 impl Settings {
     fn load(data: &PathBuf) -> Self {
         let mut value: Self = fs::read(data.join("settings.json")).ok().and_then(|bytes| serde_json::from_slice(&bytes).ok()).unwrap_or_default();
         if !matches!(value.language.as_str(),"en"|"id"|"both") { value.language = "en".into(); }
-        if !hotkeys::pair(value.dictation_hotkey,value.language_hotkey) {value.dictation_hotkey=123;value.language_hotkey=122;}
+        if !hotkeys::pair(value.dictation_hotkey,value.language_hotkey) {value.dictation_hotkey=123;value.language_hotkey=121;}
         value.max_recording_seconds = value.max_recording_seconds.clamp(10, 120);
         value
     }
@@ -55,7 +55,7 @@ struct App {
     raw: String, cleaned: String, pending: String, inserted: usize, languages: HashSet<String>, speech_model: String,
     tray: NOTIFYICONDATAW, icon: HICON, record_icon: HICON,
     test_samples: Option<Vec<i16>>, test_offset: usize, test_target: Option<usize>,
-    picker:bool, picker_pending:bool, picker_voice:Instant, settings_checked:Instant,
+    picker:bool, picker_pending:bool, picker_voice:Instant, picker_has_voice:bool, settings_checked:Instant,
 }
 
 impl App {
@@ -78,6 +78,7 @@ impl App {
         self.settings=Settings::load(&self.data);self.apply_hotkeys();
         self.pending.clear();self.raw.clear();self.cleaned.clear();self.buffer.clear();self.total_samples=0;
         self.test_offset=0;self.last_sent_len=0;self.request_id=0;self.started=Instant::now();self.last_voice=self.started;self.picker_voice=self.started;
+        self.picker_has_voice=false;
         self.recording=true;self.finishing=false;self.hide_at=None;self.mic_stopping=false;
         RECORDING.store(true,Ordering::Relaxed);
         self.mic_starting=self.test_samples.is_none();self.capture=None;
@@ -86,8 +87,9 @@ impl App {
         self.display.wave.iter_mut().for_each(|value|*value=0.);
         self.display.selected=match self.settings.language.as_str() {"id"=>1,"both"=>2,_=>0};
         self.display.recording=true;self.display.cue("");self.display.show("","");
-        self.inflight=true;self.worker_loaded=true;
-        let _=self.requests.send(worker::Work::Request(self.session,json!({"command":"prepare","id":0}),None));
+        // Mouse selection needs no model. A voice command starts inference only
+        // after actual microphone activity, with the same asynchronous worker.
+        self.inflight=false;
         SetTimer(self.display.hwnd,1,16,None);self.timer_interval=16;self.update_tip();self.status("language_picker");
     }
     unsafe fn close_picker(&mut self) {
@@ -116,12 +118,12 @@ impl App {
     }
     unsafe fn new(root: PathBuf, data: PathBuf, hwnd: HWND, test_samples: Option<Vec<i16>>) -> Self {
         let (requests, responses) = worker::start(root.clone(), data.clone());
-        let icon = LoadImageW(std::ptr::null_mut(), wide(&root.join("assets/transcribr.ico").to_string_lossy()).as_ptr(), IMAGE_ICON, 32, 32, LR_LOADFROMFILE) as HICON;
-        let record_icon = LoadImageW(std::ptr::null_mut(), wide(&root.join("assets/transcribr.ico").to_string_lossy()).as_ptr(), IMAGE_ICON, 32, 32, LR_LOADFROMFILE) as HICON;
+        let icon = LoadImageW(std::ptr::null_mut(), wide(&root.join("assets/dictately.ico").to_string_lossy()).as_ptr(), IMAGE_ICON, 32, 32, LR_LOADFROMFILE) as HICON;
+        let record_icon = LoadImageW(std::ptr::null_mut(), wide(&root.join("assets/dictately.ico").to_string_lossy()).as_ptr(), IMAGE_ICON, 32, 32, LR_LOADFROMFILE) as HICON;
         let mut tray: NOTIFYICONDATAW = std::mem::zeroed();
         tray.cbSize = std::mem::size_of_val(&tray) as u32; tray.hWnd = hwnd; tray.uID = 1;
         tray.uFlags = NIF_ICON | NIF_TIP | NIF_MESSAGE; tray.hIcon = icon; tray.uCallbackMessage = TRAY;
-        let tip = wide("Transcribr · F12 · English only"); tray.szTip[..tip.len()].copy_from_slice(&tip);
+        let tip = wide("Dictately · F12 · English only"); tray.szTip[..tip.len()].copy_from_slice(&tip);
         Shell_NotifyIconW(NIM_ADD, &tray);
         let now = Instant::now();
         let mut app = Self { settings: Settings::load(&data), input: typing::InputWorker::new(), display: Display::new(hwnd), root, data,
@@ -132,7 +134,7 @@ impl App {
             last_request: now, started: now, last_voice: now, last_work: now, last_insert: now,
             worker_loaded: false, hide_at: None, timer_interval:1000, raw: String::new(), cleaned: String::new(), pending: String::new(),
             inserted: 0, languages: HashSet::new(), speech_model:"loading".into(), tray, icon, record_icon, test_samples, test_offset: 0, test_target: None,
-            picker:false,picker_pending:false,picker_voice:now,settings_checked:now };
+            picker:false,picker_pending:false,picker_voice:now,picker_has_voice:false,settings_checked:now };
         app.apply_hotkeys();
         app.update_tip(); app
     }
@@ -140,7 +142,7 @@ impl App {
         self.tray.szTip.fill(0);
         let language = match self.settings.language.as_str() {"id"=>"Indonesian","both"=>"English + Indonesian",_=>"English"};
         let state = if self.picker {"Language picker".to_string()} else if self.recording {"Recording".into()} else if self.finishing {"Finishing".into()} else {hotkeys::name(self.settings.dictation_hotkey)};
-        let tip = wide(&format!("Transcribr · {language} · {state}"));
+        let tip = wide(&format!("Dictately · {language} · {state}"));
         self.tray.szTip[..tip.len()].copy_from_slice(&tip);
         Shell_NotifyIconW(NIM_MODIFY, &self.tray);
     }
@@ -150,7 +152,7 @@ impl App {
         }
     }
     fn status(&self, state: &str) {
-        let value = json!({"pid": std::process::id(), "state": state, "version":env!("CARGO_PKG_VERSION"), "speech_model":self.speech_model, "app":"Transcribr", "hwnd":self.display.hwnd as usize,
+        let value = json!({"pid": std::process::id(), "state": state, "version":env!("CARGO_PKG_VERSION"), "speech_model":self.speech_model, "app":"Dictately", "hwnd":self.display.hwnd as usize,
             "at_unix":unix(), "live_commits":self.inserted, "language":self.settings.language, "worker_loaded":self.worker_loaded,
             "language_picker":self.picker,"dictation_hotkey":self.settings.dictation_hotkey,"language_hotkey":self.settings.language_hotkey,
             "engine_ready":self.worker_loaded && !self.inflight, "editor_locked":self.editor_locked, "pending_characters":self.pending.chars().count(),
@@ -204,7 +206,7 @@ impl App {
         self.capture = None; self.mic_starting = self.test_samples.is_none(); self.mic_stopping = false;
         if self.mic_starting {
             // Delay injection is restricted to the no-insertion QA mode.
-            let delay = if self.test_target == Some(0) { std::env::var("TRANSCRIBR_TEST_MIC_DELAY_MS").ok()
+            let delay = if self.test_target == Some(0) { std::env::var("DICTATELY_TEST_MIC_DELAY_MS").ok()
                 .and_then(|value|value.parse::<u64>().ok()).unwrap_or(0).min(2000) } else {0};
             self.microphone.start(self.session, Duration::from_millis(delay));
         }
@@ -233,7 +235,7 @@ impl App {
                 self.buffer.extend_from_slice(result); result.len()
             } else { 0 }
         } else { 0 };
-        if level > 0.0025 { self.last_voice = Instant::now(); }
+        if level > 0.0025 { self.last_voice = Instant::now();if self.picker {self.picker_has_voice=true;} }
         self.display.amplitude(level); self.total_samples += incoming;
     }
     unsafe fn receive_audio(&mut self) {
@@ -296,9 +298,16 @@ impl App {
     unsafe fn dispatch(&mut self) {
         if self.inflight || self.mic_stopping { return; }
         if self.picker {
+            if !self.picker_has_voice {
+                // Retain a short lead-in for soft consonants without decoding
+                // repeated silence or growing the mouse-only audio buffer.
+                let excess=self.buffer.len().saturating_sub(3200);
+                if excess>0 {self.buffer.drain(..excess);}
+                return;
+            }
             if self.mic_starting || self.buffer.len()<8000 || self.picker_voice.elapsed()<Duration::from_millis(700) {return;}
             if self.last_voice.elapsed()<Duration::from_millis(450) && self.buffer.len()<64000 {return;}
-            self.request_id+=1;self.inflight=true;self.picker_voice=Instant::now();
+            self.request_id+=1;self.inflight=true;self.worker_loaded=true;self.picker_has_voice=false;self.picker_voice=Instant::now();
             let length=self.buffer.len().min(16000*5);
             let _=self.requests.send(worker::Work::Request(self.session,json!({"command":"select_language","id":self.request_id}),Some(self.buffer[..length].to_vec())));
             return;
@@ -476,7 +485,7 @@ impl App {
     unsafe fn menu(&mut self) {
         if !self.recording && !self.finishing { self.settings = Settings::load(&self.data); }
         let menu = CreatePopupMenu();
-        for (id, title) in [(106,"Change language"),(102, "English only"), (103, "Indonesian only"),(107,"English + Indonesian"), (100, "History & settings"),(108,"Keyboard shortcuts"), (104, "Start with Windows"), (105, "Quit Transcribr")] {
+        for (id, title) in [(106,"Change language"),(102, "English only"), (103, "Indonesian only"),(107,"English + Indonesian"), (100, "History & settings"),(108,"Keyboard shortcuts"), (104, "Start with Windows"), (105, "Quit Dictately")] {
             let checked = (id == 102 && self.settings.language == "en")
                 || (id == 103 && self.settings.language == "id") || (id==107 && self.settings.language=="both") || (id == 104 && startup_command().is_some());
             let disabled = if matches!(id,102|103|107) && (self.recording || self.finishing) { MF_GRAYED } else { 0 };
@@ -495,13 +504,13 @@ impl App {
         }
     }
     fn open_settings(&self,shortcuts:bool) {
-        let bundled = self.root.join("runtime/settings/TranscribrSettings.exe");
+        let bundled = self.root.join("runtime/settings/DictatelySettings.exe");
         let mut command = if bundled.is_file() { Command::new(bundled) } else {
             let mut python = Command::new(self.root.join(".venv/Scripts/pythonw.exe"));
             python.arg(self.root.join("settings_window.py")); python
         };
         if shortcuts {command.arg("--shortcuts");}
-        let _ = command.current_dir(&self.root).env("TRANSCRIBR_ROOT", &self.root).creation_flags(0x08000000).spawn();
+        let _ = command.current_dir(&self.root).env("DICTATELY_ROOT", &self.root).creation_flags(0x08000000).spawn();
     }
 }
 
@@ -509,12 +518,13 @@ fn unix() -> u64 { SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_defaul
 fn append_phrase(target: &mut String, phrase: &str) {
     if !target.is_empty() && !target.ends_with(char::is_whitespace) { target.push(' '); } target.push_str(phrase.trim());
 }
-fn startup_command() -> Option<String> {
+fn startup_command() -> Option<String> { run_command("Dictately") }
+fn run_command(name:&str) -> Option<String> {
     unsafe {
         let mut key = std::ptr::null_mut();
         if RegOpenKeyExW(HKEY_CURRENT_USER, wide("Software\\Microsoft\\Windows\\CurrentVersion\\Run").as_ptr(), 0, KEY_READ, &mut key) != 0 { return None; }
         let mut bytes = [0u16; 2048]; let mut size = 4096;
-        let result = RegQueryValueExW(key, wide("Transcribr").as_ptr(), std::ptr::null(), std::ptr::null_mut(), bytes.as_mut_ptr() as _, &mut size);
+        let result = RegQueryValueExW(key, wide(name).as_ptr(), std::ptr::null(), std::ptr::null_mut(), bytes.as_mut_ptr() as _, &mut size);
         RegCloseKey(key);
         if result != 0 { None } else { Some(String::from_utf16_lossy(&bytes[..size as usize / 2]).trim_end_matches('\0').to_string()) }
     }
@@ -525,10 +535,15 @@ fn set_startup(root: &PathBuf, enabled: bool) {
         if RegCreateKeyExW(HKEY_CURRENT_USER, wide("Software\\Microsoft\\Windows\\CurrentVersion\\Run").as_ptr(), 0, std::ptr::null(), 0, KEY_SET_VALUE,
             std::ptr::null(), &mut key, std::ptr::null_mut()) != 0 { return; }
         if enabled {
-            let value = wide(&format!("\"{}\"", root.join("Transcribr.exe").display()));
-            RegSetValueExW(key, wide("Transcribr").as_ptr(), 0, REG_SZ, value.as_ptr() as _, (value.len() * 2) as u32);
-        } else { RegDeleteValueW(key, wide("Transcribr").as_ptr()); }
+            let value = wide(&format!("\"{}\"", root.join("Dictately.exe").display()));
+            RegSetValueExW(key, wide("Dictately").as_ptr(), 0, REG_SZ, value.as_ptr() as _, (value.len() * 2) as u32);
+        } else { RegDeleteValueW(key, wide("Dictately").as_ptr()); }
         RegDeleteValueW(key, wide("LocalFlow").as_ptr());
+        for previous in ["Transcribr","Transcriber"] {
+            if run_command(previous).is_some_and(|command|command.eq_ignore_ascii_case(&format!("\"{}\"",root.join(format!("{previous}.exe")).display()))) {
+                RegDeleteValueW(key,wide(previous).as_ptr());
+            }
+        }
         RegCloseKey(key);
     }
 }
@@ -608,7 +623,8 @@ fn main() {
         windows_sys::Win32::UI::HiDpi::SetProcessDpiAwarenessContext(windows_sys::Win32::UI::HiDpi::DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
         let args: Vec<String> = std::env::args().collect();
         if args.iter().any(|arg| arg == "--quit-running") {
-            let window = FindWindowW(wide("TranscribrNativeOverlay").as_ptr(), std::ptr::null());
+            for class in ["DictatelyNativeOverlay","TranscribrNativeOverlay","TranscriberNativeOverlay"] {
+            let window = FindWindowW(wide(class).as_ptr(), std::ptr::null());
             if !window.is_null() {
                 let mut pid = 0; GetWindowThreadProcessId(window, &mut pid);
                 let process = OpenProcess(0x00100000, 0, pid); // SYNCHRONIZE only
@@ -617,6 +633,7 @@ fn main() {
                 let stopped = posted != 0 && WaitForSingleObject(process, 10000) == WAIT_OBJECT_0;
                 CloseHandle(process);
                 if !stopped { std::process::exit(1); }
+            }
             }
             return;
         }
@@ -628,23 +645,36 @@ fn main() {
         }
         let exe = std::env::current_exe().unwrap();
         let root = exe.ancestors().find(|p| p.join("live_worker.py").is_file()).unwrap().to_path_buf();
-        let data = std::env::var_os("LOCALFLOW_DATA").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(std::env::var_os("LOCALAPPDATA").unwrap()).join("Transcribr"));
-        let migrate = std::env::var_os("LOCALFLOW_DATA").is_none();
+        let data_override=std::env::var_os("DICTATELY_DATA").or_else(||std::env::var_os("LOCALFLOW_DATA"));
+        let migrate=data_override.is_none();
+        let data = data_override.map(PathBuf::from).unwrap_or_else(|| PathBuf::from(std::env::var_os("LOCALAPPDATA").unwrap()).join("Dictately"));
         fs::create_dir_all(&data).ok();
         if migrate {
-            for previous in ["Transcriber", "LocalFlow"] {
+            for previous in ["Transcribr", "Transcriber", "LocalFlow"] {
                 let old = PathBuf::from(std::env::var_os("LOCALAPPDATA").unwrap()).join(previous);
-                for name in ["settings.json", "history.json"] { if old.join(name).is_file() && !data.join(name).exists() { let _ = fs::copy(old.join(name), data.join(name)); } }
+                for name in ["settings.json", "history.json"] {
+                    if let Ok(mut bytes)=fs::read(old.join(name)) {
+                        if name=="settings.json" {
+                            if let Ok(mut value)=serde_json::from_slice::<Value>(&bytes) {
+                                if value["language_hotkey"]==122 && value["dictation_hotkey"]!=121 {value["language_hotkey"]=json!(121);bytes=serde_json::to_vec_pretty(&value).unwrap();}
+                            }
+                        }
+                        if let Ok(mut destination)=fs::OpenOptions::new().write(true).create_new(true).open(data.join(name)) {let _=destination.write_all(&bytes);}
+                    }
+                }
+            }
+            if startup_command().is_none() && run_command("Transcribr").is_some_and(|command|command.eq_ignore_ascii_case(&format!("\"{}\"",root.join("Transcribr.exe").display()))) {
+                set_startup(&root,true);
             }
         }
         let settings = Settings::load(&data);
         if args.iter().any(|arg|arg=="--settings") {
-            let bundled=root.join("runtime/settings/TranscribrSettings.exe");
+            let bundled=root.join("runtime/settings/DictatelySettings.exe");
             let mut command=if bundled.is_file() {Command::new(bundled)} else {
                 let mut python=Command::new(root.join(".venv/Scripts/pythonw.exe"));python.arg(root.join("settings_window.py"));python
             };
             if args.iter().any(|arg|arg=="--shortcuts") {command.arg("--shortcuts");}
-            if command.current_dir(&root).env("TRANSCRIBR_ROOT",&root).creation_flags(0x08000000).spawn().is_err() {std::process::exit(1);}
+            if command.current_dir(&root).env("DICTATELY_ROOT",&root).creation_flags(0x08000000).spawn().is_err() {std::process::exit(1);}
             return;
         }
         if let Some(index)=args.iter().position(|arg|arg=="--set-hotkeys") {
@@ -676,15 +706,15 @@ fn main() {
             };
             let _ = fs::write(data.join("microphone-check.json"), result.to_string()); return;
         }
-        let mutex_name=if args.iter().any(|a|a=="--preview-language-panel") {format!("Local\\Transcribr.PanelPreview.{}",std::process::id())} else {"Local\\LocalFlow.Dictation.v1".into()};
+        let mutex_name=if args.iter().any(|a|a=="--preview-language-panel") {format!("Local\\Dictately.PanelPreview.{}",std::process::id())} else {"Local\\LocalFlow.Dictation.v1".into()};
         let mutex = CreateMutexW(std::ptr::null(), 0, wide(&mutex_name).as_ptr());
         if GetLastError() == ERROR_ALREADY_EXISTS { CloseHandle(mutex); return; }
         let test_samples = args.iter().position(|a| a == "--test-pcm").and_then(|i| args.get(i+1)).map(|path| {
             fs::read(path).unwrap().chunks_exact(2).map(|b| i16::from_le_bytes([b[0],b[1]])).collect::<Vec<_>>() });
-        let instance = GetModuleHandleW(std::ptr::null()); let cls_name = wide("TranscribrNativeOverlay");
+        let instance = GetModuleHandleW(std::ptr::null()); let cls_name = wide("DictatelyNativeOverlay");
         let class = WNDCLASSW { lpfnWndProc: Some(window_proc), hInstance: instance, lpszClassName: cls_name.as_ptr(), ..std::mem::zeroed() };
         RegisterClassW(&class);
-        let hwnd = CreateWindowExW(WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_LAYERED, cls_name.as_ptr(), wide("Transcribr").as_ptr(),
+        let hwnd = CreateWindowExW(WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_LAYERED, cls_name.as_ptr(), wide("Dictately").as_ptr(),
             WS_POPUP, 0, 0, display::WIDTH, display::HEIGHT, std::ptr::null_mut(), std::ptr::null_mut(), instance, std::ptr::null());
         if hwnd.is_null() { CloseHandle(mutex); return; } HWND_ATOMIC.store(hwnd as isize, Ordering::Relaxed);
         let mut app = Box::new(App::new(root, data, hwnd, test_samples));
@@ -702,8 +732,10 @@ fn main() {
         let mouse_hook=SetWindowsHookExW(WH_MOUSE_LL,Some(mouse),instance,0);
         if mouse_hook.is_null() {UnhookWindowsHookEx(hook);app.log("Input destination tracking failed");app.status("error");return;}
         // Warm the local models without opening the microphone or showing a popup.
-        app.worker_loaded = true; app.inflight = true;
-        let _ = app.requests.send(worker::Work::Request(0, json!({"command":"prepare", "id":0, "cleanup":app.settings.cleanup}), None));
+        if !(app.test_target==Some(0) && args.iter().any(|arg|arg=="--test-no-warmup")) {
+            app.worker_loaded = true; app.inflight = true;
+            let _ = app.requests.send(worker::Work::Request(0, json!({"command":"prepare", "id":0, "cleanup":app.settings.cleanup}), None));
+        }
         app.status("ready"); app.log("Native Rust controller ready"); SetTimer(hwnd, 1, 1000, None);
         let mut message: MSG = std::mem::zeroed();
         while GetMessageW(&mut message, std::ptr::null_mut(), 0, 0) > 0 { TranslateMessage(&message); DispatchMessageW(&message); }
@@ -715,5 +747,8 @@ fn main() {
 #[cfg(test)] mod tests {
     use super::*;
     #[test] fn phrase_spacing() { let mut s = "Hello".to_string(); append_phrase(&mut s, " world. "); assert_eq!(s, "Hello world."); }
-    #[test] fn defaults_locked_english() { assert_eq!(Settings::default().language, "en"); }
+    #[test] fn defaults_locked_english() {
+        let defaults=Settings::default();assert_eq!(defaults.language,"en");
+        assert_eq!(defaults.dictation_hotkey,123);assert_eq!(defaults.language_hotkey,121);
+    }
 }

@@ -1,4 +1,4 @@
-"""Experimental macOS / Linux X11 frontend sharing Transcribr's speech worker.
+"""Experimental macOS / Linux X11 frontend sharing Dictately's speech worker.
 
 Run with the project-local desktop environment, not the Windows launcher.
 """
@@ -157,13 +157,13 @@ def run_desktop(smoke=False, probe=None):
     from PySide6.QtWidgets import QApplication, QWidget, QSystemTrayIcon, QMenu, QMessageBox, QDialog, QVBoxLayout, QTextEdit, QPushButton
 
     app = QApplication(sys.argv[:1])
-    app.setApplicationName("Transcribr")
+    app.setApplicationName("Dictately")
     app.setQuitOnLastWindowClosed(False)
     data = user_data_dir(); data.mkdir(parents=True, exist_ok=True)
     instance = QLockFile(str(data / "desktop.lock"))
     if not instance.tryLock(0):
         return 0
-    logger = logging.getLogger("transcribr.desktop")
+    logger = logging.getLogger("dictately.desktop")
     logger.setLevel(logging.INFO)
     handler = RotatingFileHandler(data / "desktop.log", maxBytes=1_000_000, backupCount=2)
     logger.addHandler(handler)
@@ -220,8 +220,8 @@ def run_desktop(smoke=False, probe=None):
             self.buffer = PhraseBuffer(); self.transcript = ''; self.started = 0.; self.last_request = 0.
             self.last_toggle = 0.; self.level = 0.; self.last_audio = 0.; self.last_voice = 0.; self.last_injected = ''
             self.window = Waveform(); self.history_dialog = None
-            self.tray = QSystemTrayIcon(QIcon(str(ROOT / "assets/transcribr.png")), app)
-            self.tray.setToolTip("Transcribr · F12 to dictate")
+            self.tray = QSystemTrayIcon(QIcon(str(ROOT / "assets/dictately.png")), app)
+            self.tray.setToolTip("Dictately · F12 to dictate")
             self.menu = QMenu(); self.group = QActionGroup(self.menu); self.group.setExclusive(True)
             for title, language in [('English only','en'),('Indonesian only','id')]:
                 action = QAction(title,self.menu); action.setCheckable(True); action.setChecked(self.settings['language']==language)
@@ -239,14 +239,14 @@ def run_desktop(smoke=False, probe=None):
                 from speech_models import selected_model
                 directory = selected_model(data)
                 if not (data / 'models' / directory / 'model.bin').exists():
-                    raise RuntimeError('Speech model is missing. Run Install Transcribr.command or install-desktop.sh again')
+                    raise RuntimeError('Speech model is missing. Run Install Dictately.command or install-desktop.sh again')
                 self.hooks = start_hotkey(lambda:self.events.put('toggle'),lambda:self.events.put('cancel'))
             self.timer = QTimer(); self.timer.timeout.connect(self.tick); self.timer.start(40)
         def language(self, code):
             self.settings['language']=code; write_json(data / 'desktop-settings.json',self.settings)
         def notice(self, text):
             logger.warning(text)
-            self.tray.showMessage('Transcribr', text, QSystemTrayIcon.Warning, 7000)
+            self.tray.showMessage('Dictately', text, QSystemTrayIcon.Warning, 7000)
         def toggle(self):
             if time.monotonic()-self.last_toggle < .4: return
             self.last_toggle=time.monotonic()
@@ -359,7 +359,7 @@ def run_desktop(smoke=False, probe=None):
         def show_history(self):
             if self.recording or self.starting or self.finishing:
                 self.notice('Finish dictation before opening History');return
-            dialog=QDialog();dialog.setWindowTitle('Transcribr history');dialog.resize(600,400)
+            dialog=QDialog();dialog.setWindowTitle('Dictately history');dialog.resize(600,400)
             layout=QVBoxLayout(dialog);text=QTextEdit();text.setReadOnly(True)
             text.setPlainText('\n\n'.join(f"{x['at']} [{x['language']}]\n{x['text']}" for x in self.history))
             layout.addWidget(text)
@@ -382,14 +382,14 @@ def run_desktop(smoke=False, probe=None):
             probe(controller,app)
         elif smoke:
             controller.window.open()
-            if os.environ.get('TRANSCRIBR_SMOKE_IMAGE'):
-                QTimer.singleShot(250,lambda:controller.window.grab().save(os.environ['TRANSCRIBR_SMOKE_IMAGE']))
+            if os.environ.get('DICTATELY_SMOKE_IMAGE'):
+                QTimer.singleShot(250,lambda:controller.window.grab().save(os.environ['DICTATELY_SMOKE_IMAGE']))
             QTimer.singleShot(300,controller.window.close_wave)
             QTimer.singleShot(650,app.quit)
         app.exec()
     except Exception as error:
         logger.exception('Startup failed')
-        QMessageBox.critical(None,'Transcribr',str(error))
+        QMessageBox.critical(None,'Dictately',str(error))
         return 1
     finally:
         handler.close()

@@ -9,10 +9,10 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import winreg
 
-from runtime_paths import app_root
+from runtime_paths import app_root, user_data_dir
 from hotkeys import capture_shortcut, shortcut_name, valid_shortcut, DICTATION_DEFAULT, LANGUAGE_DEFAULT
 ROOT = app_root()
-DATA = Path(os.environ.get("LOCALFLOW_DATA", str(Path(os.environ["LOCALAPPDATA"]) / "Transcribr")))
+DATA = user_data_dir()
 BG, CARD, FIELD, TEXT, MUTED, ACCENT = "#111111", "#1d1d1d", "#2a2a2a", "#f1f1f1", "#aaaaaa", "#e5e5e5"
 LANGUAGES = {"English only": "en", "Indonesian only": "id", "English + Indonesian": "both"}
 
@@ -31,22 +31,22 @@ def startup(enabled=None):
     with winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run") as key:
         if enabled is None:
             try:
-                return bool(winreg.QueryValueEx(key, "Transcribr")[0])
+                return bool(winreg.QueryValueEx(key, "Dictately")[0])
             except FileNotFoundError:
                 return False
         if enabled:
-            winreg.SetValueEx(key, "Transcribr", 0, winreg.REG_SZ, f'"{ROOT / "Transcribr.exe"}"')
+            winreg.SetValueEx(key, "Dictately", 0, winreg.REG_SZ, f'"{ROOT / "Dictately.exe"}"')
         else:
             try:
-                winreg.DeleteValue(key, "Transcribr")
+                winreg.DeleteValue(key, "Dictately")
             except FileNotFoundError:
                 pass
 
 class Window:
     def __init__(self):
         self.root = tk.Tk()
-        self.root.title("Transcribr — History & settings")
-        self.root.iconbitmap(str(ROOT / "assets/transcribr.ico"))
+        self.root.title("Dictately: History & settings")
+        self.root.iconbitmap(str(ROOT / "assets/dictately.ico"))
         self.root.configure(bg=BG)
         width, height = 840, 670
         self.root.geometry(f"{width}x{height}+{max(0,(self.root.winfo_screenwidth()-width)//2)}+{max(0,(self.root.winfo_screenheight()-height)//2)}")
@@ -75,7 +75,7 @@ class Window:
         outer.pack(fill="both", expand=True)
         header = ttk.Frame(outer)
         header.pack(fill="x")
-        ttk.Label(header, text="Transcribr", font=("Segoe UI", 26, "bold")).pack(side="left")
+        ttk.Label(header, text="Dictately", font=("Segoe UI", 26, "bold")).pack(side="left")
         ttk.Label(header, text="●  ON DEVICE", foreground=ACCENT, font=("Segoe UI", 10, "bold")).pack(side="right")
         ttk.Label(outer, text="Your voice, right where you type.", style="Muted.TLabel").pack(anchor="w", pady=(4, 20))
         tabs = ttk.Notebook(outer)
@@ -122,7 +122,7 @@ class Window:
         if not valid_shortcut(self.dictation_hotkey):self.dictation_hotkey=DICTATION_DEFAULT
         if not valid_shortcut(self.language_hotkey) or self.language_hotkey==self.dictation_hotkey:
             self.dictation_hotkey=DICTATION_DEFAULT;self.language_hotkey=LANGUAGE_DEFAULT
-        ttk.Label(shortcuts,text="Make Transcribr fit your keyboard",font=("Segoe UI",15,"bold")).pack(anchor="w",pady=(0,10))
+        ttk.Label(shortcuts,text="Make Dictately fit your keyboard",font=("Segoe UI",15,"bold")).pack(anchor="w",pady=(0,10))
         ttk.Label(shortcuts,text="Click a shortcut, then press a key or combination. These shortcuts work globally.",style="Muted.TLabel").pack(anchor="w",pady=(0,25))
         self.shortcut_buttons={}
         for field,label in [('dictation_hotkey','Open / close microphone'),('language_hotkey','Choose language')]:
@@ -130,10 +130,10 @@ class Window:
             ttk.Label(row,text=label).pack(side='left')
             button=ttk.Button(row,text=shortcut_name(getattr(self,field)),command=lambda name=field:self.assign_shortcut(name))
             button.pack(side='right');self.shortcut_buttons[field]=button
-        self.shortcut_feedback=tk.StringVar(value='Defaults: F12 for dictation · F11 for language')
+        self.shortcut_feedback=tk.StringVar(value='Defaults: F12 for dictation · F10 for language')
         ttk.Label(shortcuts,textvariable=self.shortcut_feedback,style='Muted.TLabel').pack(anchor='w',pady=(20,10))
         actions=ttk.Frame(shortcuts);actions.pack(fill='x',pady=12)
-        ttk.Button(actions,text='Restore F12 / F11',command=self.reset_shortcuts).pack(side='left')
+        ttk.Button(actions,text='Restore F12 / F10',command=self.reset_shortcuts).pack(side='left')
         ttk.Button(actions,text='Save shortcuts',style='Accent.TButton',command=self.save_shortcuts).pack(side='right')
         if '--shortcuts' in sys.argv:tabs.select(shortcuts)
         bottom=ttk.Frame(outer);bottom.pack(fill='x',pady=(14,0))

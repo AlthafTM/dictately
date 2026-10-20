@@ -31,10 +31,10 @@ jobs:
           ./.venv/Scripts/python.exe -m unittest discover -s tests -p 'test_*.py' -q
       - uses: actions/upload-artifact@v4
         with:
-          name: Transcribr-Windows-Installer
+          name: Dictately-Windows-Installer
           path: |
-            dist/Transcribr-*-Setup.exe
-            dist/Transcribr-*-Setup.exe.sha256
+            dist/Dictately-*-Setup.exe
+            dist/Dictately-*-Setup.exe.sha256
           compression-level: 0
       - name: Publish tagged release
         if: startsWith(github.ref, 'refs/tags/v')
@@ -42,5 +42,5 @@ jobs:
         with:
           generate_release_notes: true
           files: |
-            dist/Transcribr-*-Setup.exe
-            dist/Transcribr-*-Setup.exe.sha256
+            dist/Dictately-*-Setup.exe
+            dist/Dictately-*-Setup.exe.sha256

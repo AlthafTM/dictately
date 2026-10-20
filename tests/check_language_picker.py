@@ -1,7 +1,7 @@
 """Owned-window Windows tests for picker routing, live rebinding and voice commands.
 
 Uses synthesized audio files, no microphone and no insertion into personal apps.
-Run tests/make_audio_fixtures.ps1 first, with Transcribr stopped.
+Run tests/make_audio_fixtures.ps1 first, with Dictately stopped.
 """
 import ctypes as c
 from ctypes import wintypes as w
@@ -60,9 +60,9 @@ def chord(value):
 def main():
     base=ROOT/'qa'/('language-controls-'+uuid.uuid4().hex[:8]);base.mkdir(parents=True)
     app_dir=Path(sys.argv[sys.argv.index('--app-dir')+1]) if '--app-dir' in sys.argv else ROOT/'native/target/release'
-    executable=app_dir/('Transcribr.exe' if '--app-dir' in sys.argv else 'transcribr.exe')
+    executable=app_dir/('Dictately.exe' if '--app-dir' in sys.argv else 'dictately.exe')
     before=user.GetForegroundWindow()
-    fixture=user.CreateWindowExW(0,'EDIT','Transcribr synthetic shortcut fixture',0x10CF0000,100,100,550,250,None,None,None,None)
+    fixture=user.CreateWindowExW(0,'EDIT','Dictately synthetic shortcut fixture',0x10CF0000,100,100,550,250,None,None,None,None)
     assert fixture
     # Only synthetic fixtures receive hotkey events; no text is injected.
     user.keybd_event(18,0,0,0);user.keybd_event(18,0,2,0);user.SetForegroundWindow(fixture);user.SetFocus(fixture)
@@ -73,27 +73,36 @@ def main():
             with wave.open(str(ROOT/f'qa/language-{name}.wav'),'rb') as source:
                 assert (source.getframerate(),source.getsampwidth(),source.getnchannels())==(16000,2,1)
                 pcm=source.readframes(source.getnframes())+bytes(32000)
+            if index==0:pcm=bytes(128000)+pcm  # Four silent seconds before voice.
             sample=data/'voice.pcm';sample.write_bytes(pcm)
             environment=dict(os.environ,LOCALFLOW_DATA=str(data))
-            process=subprocess.Popen([str(executable),'--test-pcm',str(sample),'--test-target','0'],env=environment,creationflags=subprocess.CREATE_NO_WINDOW)
+            args=[str(executable),'--test-pcm',str(sample),'--test-target','0']
+            if index==0:args.append('--test-no-warmup')
+            process=subprocess.Popen(args,env=environment,creationflags=subprocess.CREATE_NO_WINDOW)
             status=lambda:read(data/'status.json')
             try:
-                wait(lambda:status().get('pid')==process.pid and status().get('engine_ready'))
+                wait(lambda:status().get('pid')==process.pid and (index==0 or status().get('engine_ready')))
                 hwnd=status()['hwnd']
                 if index==0:
                     # While a shortcut-capture dialog owns this event, old
                     # shortcuts must reach the dialog instead of toggling the app.
                     capture=kernel.CreateEventW(None,True,True,CAPTURE_EVENT)
                     try:
-                        chord(122);time.sleep(.15);pump();assert not status().get('language_picker')
+                        chord(121);time.sleep(.15);pump();assert not status().get('language_picker')
                     finally:kernel.CloseHandle(capture)
-                    chord(122);wait(lambda:status().get('language_picker'))
+                    chord(121);wait(lambda:status().get('language_picker'))
+                    # Hit targets move with the entry animation; click only once
+                    # the canonical resting coordinates are visible.
+                    time.sleep(1.2);pump()
+                    assert not status().get('worker_loaded'),'Silence loaded the AI model'
                     bounds=w.RECT();user.GetClientRect(hwnd,c.byref(bounds))
                     # Mouse-select Both; no voice text should have been delivered.
                     x=int(304*bounds.right/380);y=int(74*bounds.bottom/112)
                     user.PostMessageW(hwnd,0x202,0,(y<<16)|x)
                     wait(lambda:not status().get('language_picker') and status().get('language')=='both')
                     results['mouse_selection']=True
+                    assert not status().get('worker_loaded'),'Mouse selection loaded the AI model'
+                    results['cold_mouse_without_model']=True
                     time.sleep(.5)
                     # Save a modifier combination and confirm live reload.
                     custom=(3<<8)|121  # Ctrl+Shift+F10
