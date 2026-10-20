@@ -11,7 +11,7 @@
   <img src="assets/dictately.png" width="112" alt="Dictately waveform icon">
 </p>
 
-**Local live dictation for Windows. Press F12, speak, and type into the app you are using**
+**Local live dictation for Windows with a clean, polished UI. Use your dictation shortcut, speak, and type into the app you are using**
 
 Dictately is a **local live dictation tool** that turns **English** or **Indonesian** speech into text in your focused text box as you speak. Text arrives in confirmed short phrases; pauses and stopping finish the remaining words. Recognition runs locally on your computer using Whisper large-v3-turbo by default. There is no account, subscription, or paid transcription API, and your speech is not sent to a cloud transcription service. After the initial downloads, dictation works offline. A small animated waveform near the bottom of the screen shows when recording is active.
 
@@ -25,8 +25,8 @@ See the [strengths, weaknesses, and Wispr Flow comparison report](docs/WISPR-FLO
 
 ## Features
 
-- **English**, **Indonesian**, or **Both**: use the Windows F10 picker by voice or mouse; fixed modes stay locked, and Both limits automatic selection to English/Indonesian
-- **Custom keyboard shortcuts**: F12 for dictation and F10 for language by default; assign your own keys or modifier combinations during setup or from Tray → Keyboard shortcuts
+- **English**, **Indonesian**, or **Both**: use the Windows language picker by voice or mouse; fixed modes stay locked, and Both limits automatic selection to English/Indonesian
+- **Custom keyboard shortcuts**: assign your own keys or modifier combinations for dictation and language selection during setup or from Tray → Keyboard shortcuts
 - **Voice typing across apps**: dictate into supported browser, messaging, document, and other editable fields
 - **Live phrase output**: text arrives in short phrases while speaking; pauses and stopping finish the remaining words
 - **Spoken corrections**: repeat a recent sentence with a small change to replace it, or say `Correction, Tuesday` / `Ralat, Selasa` to correct the last dictated word
@@ -59,7 +59,7 @@ CPU mode is supported, but the large model can be substantially slower. Cold sta
 1. Open [Releases](https://github.com/AlthafTM/dictately/releases) and download **`Dictately-<version>-Setup.exe`**
 2. Open it, choose an installation folder, optionally enable **Start Dictately when I sign in to Windows**, and click **Install**
 3. Wait while setup installs the private runtime and downloads/verifies the speech model (about 1.6 GB)
-4. Open **Dictately** from Start, press **F10** to choose a language, click a text field, and press **F12** (or your chosen shortcuts)
+4. Open **Dictately** from Start, use your language-selection shortcut to choose a language, click a text field, and use your dictation shortcut to start speaking
 
 The installer includes Python, speech libraries, the settings UI, and NVIDIA runtime libraries. It installs for your Windows user without changing system Python or requiring Rust/build tools. GPU acceleration is selected automatically when a compatible NVIDIA GPU and working driver are available; CPU fallback remains supported. After setup, dictation is local and works offline.
 
@@ -112,24 +112,24 @@ Setup builds the native controller if `Dictately.exe` is missing. Use `-Rebuild`
 ## How to use
 
 1. Launch Dictately; find the five-bar icon in the Windows notification area, possibly under the hidden-icons arrow
-2. Press **F10** and click **English**, **Indonesia**, or **Both**, or say “English”, “Indonesia”, or “Both English and Indonesian”
+2. Use your language-selection shortcut and click **English**, **Indonesia**, or **Both**, or say “English”, “Indonesia”, or “Both English and Indonesian”
 3. Click the message box, document, or other editable field where you want the words
-4. Press **F12** once and speak normally; the waveform opens and responds to your microphone
-5. Press **F12** again to stop the microphone and finish the last phrase
+4. Use your dictation shortcut once and speak normally; the waveform opens and responds to your microphone
+5. Use your dictation shortcut again to stop the microphone and finish the last phrase
 
 | Control | Action |
 | --- | --- |
-| F12 | Start or stop recording |
-| F10 | Open / close the voice-and-mouse language picker |
+| Your dictation shortcut | Start or stop recording |
+| Your language-selection shortcut | Open / close the voice-and-mouse language picker |
 | Esc | Cancel unfinished speech; text already inserted stays |
 | Tray icon | Language, history/settings, startup, and quit |
 | History & settings | Copy transcripts, clear history, edit vocabulary, accuracy, cleanup, and startup |
 | Keyboard shortcuts | Click a shortcut, press your preferred key/combination, then save |
 | `Stop Dictately.ps1` | Stop the installed controller from PowerShell |
 
-These are the default Windows shortcuts; setup and **Tray → Keyboard shortcuts** let you change them. A **Dictately Settings** Start-menu launcher also opens the editor, with a shortcuts control at its bottom left. Esc cancels shortcut capture; duplicate assignments and modifier-only shortcuts are rejected. Windows-reserved shortcuts may be unavailable, and assigning a normal typing key consumes that key globally while Dictately runs.
+**Default Windows shortcuts: F12 for dictation and F10 for language selection.** Both are configurable during setup or from **Tray → Keyboard shortcuts**. A **Dictately Settings** Start-menu launcher also opens the editor, with a shortcuts control at its bottom left. Esc cancels shortcut capture; duplicate assignments and modifier-only shortcuts are rejected. Windows-reserved shortcuts may be unavailable, and assigning a normal typing key consumes that key globally while Dictately runs.
 
-**English** and **Indonesian** modes stay locked for the recording. **Both** enables local per-segment language selection with candidates restricted to English and Indonesian; it does not translate. Rapid switching within a sentence can still be less reliable than a fixed mode. Pressing the language shortcut during dictation finishes the current phrase before opening the picker. Picker speech is used only for language commands, never inserted or saved as a dictation. Click an option if a voice command is unclear. The picker closes after 30 seconds or when you press F10/Esc. After choosing, press F12 to start dictation. The F10 picker and custom Windows shortcuts are part of the Windows controller; the experimental Mac/Linux frontend keeps its separately documented controls.
+**English** and **Indonesian** modes stay locked for the recording. **Both** enables local per-segment language selection with candidates restricted to English and Indonesian; it does not translate. Rapid switching within a sentence can still be less reliable than a fixed mode. Pressing the language shortcut during dictation finishes the current phrase before opening the picker. Picker speech is used only for language commands, never inserted or saved as a dictation. Click an option if a voice command is unclear. The picker closes after 30 seconds or when you use your language-selection shortcut again or press Esc. After choosing, use your dictation shortcut to start speaking. The language picker and custom Windows shortcuts are part of the Windows controller; the experimental Mac/Linux frontend keeps its separately documented controls.
 
 ### Choose a local AI model
 
@@ -169,7 +169,7 @@ Dictately never presses Enter to send a message and does not replace your clipbo
 
 ## Settings, privacy, and troubleshooting
 
-Settings, status, logs, and transcript history are stored in `%LOCALAPPDATA%\Dictately`. Existing settings/history from Transcribr and earlier names migrate on first launch without overwriting Dictately data. Original files remain in the old folder. Existing installer upgrades reuse their model folder and update the app/startup shortcuts. During migration, the old F11 language default becomes F10 if F10 is not already used for dictation; other custom bindings are kept.
+Settings, status, logs, and transcript history are stored in `%LOCALAPPDATA%\Dictately`. Existing settings/history from Transcribr and earlier names migrate on first launch without overwriting Dictately data. Original files remain in the old folder. Existing installer upgrades reuse their model folder and update the app/startup shortcuts. During migration, the previous language-selection default is updated when it does not conflict with your dictation binding; other custom bindings are kept.
 
 - **Recording but no text:** stop, open history to recover the transcript, click the intended editable field, and start a new recording
 - **Wrong language:** select the correct fixed language in the tray menu before recording
@@ -182,7 +182,7 @@ Speech inference stays on the device. Normal dictation does not save audio recor
 
 ## Development
 
-The Win32 controller handles the hotkey, microphone buffers, waveform, tray menu, destination tracking, and spoken-correction edits. A separate Python worker runs [faster-whisper](https://github.com/SYSTRAN/faster-whisper) / CTranslate2. Editor accessibility calls run on a dedicated COM thread so a slow provider cannot block F12 or the waveform.
+The Win32 controller handles the hotkey, microphone buffers, waveform, tray menu, destination tracking, and spoken-correction edits. A separate Python worker runs [faster-whisper](https://github.com/SYSTRAN/faster-whisper) / CTranslate2. Editor accessibility calls run on a dedicated COM thread so a slow provider cannot block shortcut handling or the waveform.
 
 ```powershell
 .\build-native.ps1 build --release --locked
