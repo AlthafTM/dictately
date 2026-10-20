@@ -15,15 +15,15 @@ using Microsoft.Win32;
 [assembly: AssemblyTitle("Dictately Setup")]
 [assembly: AssemblyProduct("Dictately")]
 [assembly: AssemblyCompany("AlthafTM")]
-[assembly: AssemblyVersion("0.10.0.0")]
-[assembly: AssemblyFileVersion("0.10.0.0")]
+[assembly: AssemblyVersion("0.10.1.0")]
+[assembly: AssemblyFileVersion("0.10.1.0")]
 
 namespace DictatelySetup {
     internal static class Core {
         internal const string Identity = "Dictately:{5BFCCF8A-BAA9-48DF-917C-D1DFE4ABCF88}";
         internal const string LegacyIdentity = "Transcribr:{5BFCCF8A-BAA9-48DF-917C-D1DFE4ABCF88}";
         internal const string LegacyUninstallKey = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\Transcribr";
-        internal const string Version = "0.10.0";
+        internal const string Version = "0.10.1";
         internal const string UninstallKey = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\Dictately";
         internal const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
         internal static CancellationTokenSource Cancel = new CancellationTokenSource();
@@ -34,6 +34,8 @@ namespace DictatelySetup {
         internal static bool Startup, Launch = true, RemoveModels = true;
         internal static int DictationKey=123, LanguageKey=121;
         internal static bool BindingsChanged;
+        [DllImport("shell32.dll", CharSet=CharSet.Unicode)]
+        private static extern void SHChangeNotify(uint events, uint flags, string item1, IntPtr item2);
         internal static bool ValidKey(int value) {
             int key=value&255;
             return value>0 && value<=4095 && key>=8 && key<=254 && key!=27 && key!=91 && key!=92 && !(key>=16&&key<=18) && !(key>=160&&key<=165);
@@ -125,6 +127,9 @@ namespace DictatelySetup {
             shortcut.InvokeMember("WorkingDirectory", BindingFlags.SetProperty, null, link, new object[] {Root});
             shortcut.InvokeMember("IconLocation", BindingFlags.SetProperty, null, link, new object[] {Inside("assets/dictately.ico")});
             shortcut.InvokeMember("Save", BindingFlags.InvokeMethod, null, link, null);
+            SHChangeNotify(0x2000, 0x5, name, IntPtr.Zero);
+            SHChangeNotify(0x2000, 0x5, Inside("assets/dictately.ico"), IntPtr.Zero);
+            SHChangeNotify(0x2000, 0x5, Inside("Dictately.exe"), IntPtr.Zero);
             System.Runtime.InteropServices.Marshal.FinalReleaseComObject(link);
             System.Runtime.InteropServices.Marshal.FinalReleaseComObject(shell);
         }

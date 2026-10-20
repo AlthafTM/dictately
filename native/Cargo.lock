@@ -99,7 +99,7 @@ dependencies = [
 
 [[package]]
 name = "dictately"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "serde",
  "serde_json",

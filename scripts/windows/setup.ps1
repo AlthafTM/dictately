@@ -35,5 +35,11 @@ $settingsShortcut.Arguments = '--settings'
 $settingsShortcut.WorkingDirectory = $taskRoot
 $settingsShortcut.IconLocation = "$taskRoot\assets\dictately.ico"
 $settingsShortcut.Save()
+if (-not ('DictatelyIconRefresh' -as [type])) {
+    Add-Type 'using System; using System.Runtime.InteropServices; public static class DictatelyIconRefresh { [DllImport("shell32.dll", CharSet=CharSet.Unicode)] public static extern void SHChangeNotify(uint events, uint flags, string item1, IntPtr item2); }'
+}
+foreach ($taskIconItem in @($shortcutPath, $settingsShortcut.FullName, "$taskRoot\assets\dictately.ico", $executable)) {
+    [DictatelyIconRefresh]::SHChangeNotify(0x2000, 0x5, $taskIconItem, [IntPtr]::Zero)
+}
 if ($StartWithWindows) { Start-Process -FilePath $executable -ArgumentList '--enable-startup' -WindowStyle Hidden -Wait }
 Write-Host 'Dictately is ready. F12 toggles dictation and F10 opens the language picker by default. Use Dictately Settings or the tray menu to change shortcuts.'

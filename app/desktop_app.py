@@ -159,6 +159,7 @@ def run_desktop(smoke=False, probe=None):
 
     app = QApplication(sys.argv[:1])
     app.setApplicationName("Dictately")
+    app.setWindowIcon(QIcon(str(ROOT / "assets/dictately.png")))
     app.setQuitOnLastWindowClosed(False)
     data = user_data_dir(); data.mkdir(parents=True, exist_ok=True)
     instance = QLockFile(str(data / "desktop.lock"))

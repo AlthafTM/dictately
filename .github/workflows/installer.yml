@@ -52,6 +52,11 @@ jobs:
           print('Frozen worker imports and clean shutdown passed')
           '@ | ./.venv/Scripts/python.exe -
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify embedded icons in every Windows executable
+        shell: pwsh
+        run: |
+          ./.venv/Scripts/python.exe tests/check_icons.py native/target/release/dictately.exe dist/frozen/DictatelyWorker/DictatelyWorker.exe dist/frozen/DictatelySettings/DictatelySettings.exe 'dist/installer-stage-*/Uninstall Dictately.exe' 'dist/Dictately-*-Setup.exe'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@v4
         with:
           name: Dictately-Windows-Installer

@@ -34,6 +34,8 @@ def main():
             time.sleep(.04)
             return {'type':'result','cleaned':'Synthetic phrase' if not request['final'] else 'tail', 'consumed':len(request['samples'])}
     def probe(controller,app):
+        assert not app.windowIcon().isNull(),'Application icon is missing'
+        assert not controller.window.windowIcon().isNull(),'Waveform window icon is missing'
         controller.input=Input()
         assert controller.timer.interval()==1000,'Idle controller should not poll at audio cadence'
         controller.show_preferences()
@@ -60,6 +62,7 @@ def main():
         def choose_preferences():
             try:
                 dialog=controller.preferences_dialog
+                assert not dialog.windowIcon().isNull(),'Preferences dialog icon is missing'
                 save=next(button for button in dialog.findChildren(QPushButton) if button.text()=='Save preferences')
                 if not save.isEnabled():QTimer.singleShot(10,choose_preferences);return
                 microphones,positions=dialog.findChildren(QComboBox)

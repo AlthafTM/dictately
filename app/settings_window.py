@@ -48,7 +48,7 @@ class Window:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("Dictately: History & settings")
-        self.root.iconbitmap(str(ROOT / "assets/dictately.ico"))
+        self.root.iconbitmap(default=str(ROOT / "assets/dictately.ico"))
         self.root.configure(bg=BG)
         width, height = 840, 670
         self.root.geometry(f"{width}x{height}+{max(0,(self.root.winfo_screenwidth()-width)//2)}+{max(0,(self.root.winfo_screenheight()-height)//2)}")

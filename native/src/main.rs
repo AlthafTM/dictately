@@ -739,7 +739,7 @@ fn main() {
         let test_samples = args.iter().position(|a| a == "--test-pcm").and_then(|i| args.get(i+1)).map(|path| {
             fs::read(path).unwrap().chunks_exact(2).map(|b| i16::from_le_bytes([b[0],b[1]])).collect::<Vec<_>>() });
         let instance = GetModuleHandleW(std::ptr::null()); let cls_name = wide("DictatelyNativeOverlay");
-        let class = WNDCLASSW { lpfnWndProc: Some(window_proc), hInstance: instance, hCursor:LoadCursorW(std::ptr::null_mut(),IDC_ARROW),lpszClassName: cls_name.as_ptr(), ..std::mem::zeroed() };
+        let class = WNDCLASSW { lpfnWndProc: Some(window_proc), hInstance: instance, hIcon:LoadIconW(instance,1usize as *const u16), hCursor:LoadCursorW(std::ptr::null_mut(),IDC_ARROW),lpszClassName: cls_name.as_ptr(), ..std::mem::zeroed() };
         RegisterClassW(&class);
         let hwnd = CreateWindowExW(WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_LAYERED, cls_name.as_ptr(), wide("Dictately").as_ptr(),
             WS_POPUP, 0, 0, display::WIDTH, display::HEIGHT, std::ptr::null_mut(), std::ptr::null_mut(), instance, std::ptr::null());
