@@ -112,3 +112,13 @@ With the normal app stopped, run:
 ```
 
 The tests never open the microphone or insert text. They use synthetic PCM, check cursor assignment/handling and frame intervals, and write ignored results under `qa/`. `DICTATELY_FRAME_METRICS` optionally records numeric submission timing; it contains no audio or transcript and is flushed only when the diagnostic process exits.
+
+## Audio and appearance preferences (0.9)
+
+Windows settings persist `overlay_position` (six top/bottom alignment choices, default `bottom_center`) and `microphone` (empty for the system default). Enumeration uses WinMM capability queries and the endpoint ID returned by [DRV_QUERYFUNCTIONINSTANCEID](https://learn.microsoft.com/en-us/windows/win32/coreaudio/endpoint-id-strings). It does not open capture. Selected endpoints are resolved on the audio thread for each new recording or picker session, so device-list reordering cannot silently select another microphone. Missing or ambiguous saved devices fail explicitly. Legacy drivers without endpoint IDs use a capability/name identity and reject duplicate matches.
+
+The WinMM callback now signals an auto-reset event after copying a completed buffer. The recycling thread waits for that event instead of waking every 10 ms to scan unchanged headers. Notifications can coalesce: every completed header is checked after waking, and shutdown explicitly wakes/joins the thread before stopping/resetting the device and collecting the tail. With 100 ms capture buffers this replaces roughly 100 scheduled polling wakeups per second with completion-driven work, normally around 10 notifications per second while capturing. This is a scheduling change, not a measured whole-app battery or recognition-speed improvement.
+
+Initial shared capture storage is **64,000 bytes instead of 640,000 bytes**, a 90% reduction in that allocation. It grows if necessary and retains the 150-second safety bound. Speech models dominate overall memory use; this is not a 90% reduction in total app memory.
+
+`tests/check_preferences.py` checks the Windows controls, native enumeration, saving, unavailable-device preservation, and reset without recording. Shared tests check placement on negative-coordinate monitors and mic reordering/disconnection/ambiguity. Native tests exercise completed-buffer notification and stop-state behavior with artificial samples, without a real device. macOS/Linux preferences use the same positions, background device enumeration, and a host/name identity. Their real-microphone limitations still apply.

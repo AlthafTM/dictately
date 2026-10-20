@@ -29,9 +29,9 @@ static mut APP: *mut App = std::ptr::null_mut();
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(default)]
-struct Settings { language: String, cleanup: bool, accuracy: bool, vocabulary: String, max_recording_seconds: u32, dictation_hotkey:u32, language_hotkey:u32 }
+struct Settings { language: String, cleanup: bool, accuracy: bool, vocabulary: String, max_recording_seconds: u32, dictation_hotkey:u32, language_hotkey:u32, overlay_position:String, microphone:String }
 impl Default for Settings {
-    fn default() -> Self { Self { language: "en".into(), cleanup: true, accuracy: true, vocabulary: String::new(), max_recording_seconds: 120, dictation_hotkey:123,language_hotkey:121 } }
+    fn default() -> Self { Self { language: "en".into(), cleanup: true, accuracy: true, vocabulary: String::new(), max_recording_seconds: 120, dictation_hotkey:123,language_hotkey:121,overlay_position:"bottom_center".into(),microphone:String::new() } }
 }
 impl Settings {
     fn load(data: &PathBuf) -> Self {
@@ -39,6 +39,7 @@ impl Settings {
         if !matches!(value.language.as_str(),"en"|"id"|"both") { value.language = "en".into(); }
         if !hotkeys::pair(value.dictation_hotkey,value.language_hotkey) {value.dictation_hotkey=123;value.language_hotkey=121;}
         value.max_recording_seconds = value.max_recording_seconds.clamp(10, 120);
+        if !display::valid_position(&value.overlay_position) {value.overlay_position="bottom_center".into();}
         value
     }
 }
@@ -84,7 +85,8 @@ impl App {
         self.recording=true;self.finishing=false;self.hide_at=None;self.mic_stopping=false;
         RECORDING.store(true,Ordering::Relaxed);
         self.mic_starting=self.test_samples.is_none();self.capture=None;
-        if self.mic_starting {self.microphone.start(self.session,Duration::ZERO);}
+        if self.mic_starting {self.microphone.start(self.session,Duration::ZERO,&self.settings.microphone);}
+        self.display.position=self.settings.overlay_position.clone();
         self.display.set_picker(true);
         self.display.wave.iter_mut().for_each(|value|*value=0.);
         self.display.selected=match self.settings.language.as_str() {"id"=>1,"both"=>2,_=>0};
@@ -138,6 +140,7 @@ impl App {
             inserted: 0, languages: HashSet::new(), speech_model:"loading".into(), tray, icon, record_icon, test_samples, test_offset: 0, test_target: None,
             picker:false,picker_pending:false,picker_voice:now,picker_has_voice:false,settings_checked:now,frame_clock:false };
         app.apply_hotkeys();
+        app.display.position=app.settings.overlay_position.clone();
         app.update_tip(); app
     }
     unsafe fn update_tip(&mut self) {
@@ -157,6 +160,7 @@ impl App {
         let value = json!({"pid": std::process::id(), "state": state, "version":env!("CARGO_PKG_VERSION"), "speech_model":self.speech_model, "app":"Dictately", "hwnd":self.display.hwnd as usize,
             "at_unix":unix(), "live_commits":self.inserted, "language":self.settings.language, "worker_loaded":self.worker_loaded,
             "language_picker":self.picker,"dictation_hotkey":self.settings.dictation_hotkey,"language_hotkey":self.settings.language_hotkey,
+            "overlay_position":self.settings.overlay_position,"preferred_microphone":self.settings.microphone,
             "engine_ready":self.worker_loaded && !self.inflight, "editor_locked":self.editor_locked, "pending_characters":self.pending.chars().count(),
             "microphone_ready":self.capture.is_some() || self.test_samples.is_some(), "microphone_starting":self.mic_starting,
             "microphone_stopping":self.mic_stopping, "audio_samples":self.total_samples});
@@ -202,6 +206,7 @@ impl App {
             return;
         }
         self.settings = Settings::load(&self.data);
+        self.display.position=self.settings.overlay_position.clone();
         self.request_id = 0; self.buffer.clear(); self.raw.clear(); self.cleaned.clear();
         self.pending.clear(); self.inserted = 0; self.languages.clear(); self.total_samples = 0;
         self.test_offset = 0; self.last_sent_len = 0; self.skip_samples = 0; self.started = Instant::now(); self.last_voice = self.started;
@@ -210,7 +215,7 @@ impl App {
             // Delay injection is restricted to the no-insertion QA mode.
             let delay = if self.test_target == Some(0) { std::env::var("DICTATELY_TEST_MIC_DELAY_MS").ok()
                 .and_then(|value|value.parse::<u64>().ok()).unwrap_or(0).min(2000) } else {0};
-            self.microphone.start(self.session, Duration::from_millis(delay));
+            self.microphone.start(self.session, Duration::from_millis(delay),&self.settings.microphone);
         }
         self.recording = true; self.finishing = false; self.hide_at = None;
         RECORDING.store(true, Ordering::Relaxed); self.display.recording = true;
@@ -460,8 +465,9 @@ impl App {
         self.receive_audio();
         if !self.recording && !self.finishing && self.settings_checked.elapsed()>Duration::from_millis(500) {
             let settings=Settings::load(&self.data);
-            let changed=settings.dictation_hotkey!=self.settings.dictation_hotkey || settings.language_hotkey!=self.settings.language_hotkey || settings.language!=self.settings.language;
+            let changed=settings.dictation_hotkey!=self.settings.dictation_hotkey || settings.language_hotkey!=self.settings.language_hotkey || settings.language!=self.settings.language || settings.overlay_position!=self.settings.overlay_position || settings.microphone!=self.settings.microphone;
             self.settings=settings;self.apply_hotkeys();self.settings_checked=Instant::now();
+            if !self.display.is_visible() {self.display.position=self.settings.overlay_position.clone();}
             if changed {self.update_tip();self.status("ready");}
         }
         if self.recording {
@@ -491,7 +497,7 @@ impl App {
     unsafe fn menu(&mut self) {
         if !self.recording && !self.finishing { self.settings = Settings::load(&self.data); }
         let menu = CreatePopupMenu();
-        for (id, title) in [(106,"Change language"),(102, "English only"), (103, "Indonesian only"),(107,"English + Indonesian"), (100, "History & settings"),(108,"Keyboard shortcuts"), (104, "Start with Windows"), (105, "Quit Dictately")] {
+        for (id, title) in [(106,"Change language"),(102, "English only"), (103, "Indonesian only"),(107,"English + Indonesian"), (100, "History & settings"),(109,"Audio & appearance"),(108,"Keyboard shortcuts"), (104, "Start with Windows"), (105, "Quit Dictately")] {
             let checked = (id == 102 && self.settings.language == "en")
                 || (id == 103 && self.settings.language == "id") || (id==107 && self.settings.language=="both") || (id == 104 && startup_command().is_some());
             let disabled = if matches!(id,102|103|107) && (self.recording || self.finishing) { MF_GRAYED } else { 0 };
@@ -505,7 +511,7 @@ impl App {
         self.frame_clock=frame_clock;
         DestroyMenu(menu);
         match selection {
-            100|108 => { self.open_settings(selection==108); }
+            100|108|109 => { self.open_settings(match selection {108=>"--shortcuts",109=>"--preferences",_=>""}); }
             106=>self.request_picker(),
             102|103|107 => self.choose_language(match selection {103=>"id",107=>"both",_=>"en"}),
             104 => { set_startup(&self.root, startup_command().is_none()); }
@@ -513,13 +519,13 @@ impl App {
             _ => {}
         }
     }
-    fn open_settings(&self,shortcuts:bool) {
+    fn open_settings(&self,tab:&str) {
         let bundled = self.root.join("runtime/settings/DictatelySettings.exe");
         let mut command = if bundled.is_file() { Command::new(bundled) } else {
             let mut python = Command::new(self.root.join(".venv/Scripts/pythonw.exe"));
             python.arg(self.root.join("app/settings_window.py")); python
         };
-        if shortcuts {command.arg("--shortcuts");}
+        if !tab.is_empty() {command.arg(tab);}
         let _ = command.current_dir(&self.root).env("DICTATELY_ROOT", &self.root).creation_flags(0x08000000).spawn();
     }
 }
@@ -638,6 +644,9 @@ fn main() {
     unsafe {
         windows_sys::Win32::UI::HiDpi::SetProcessDpiAwarenessContext(windows_sys::Win32::UI::HiDpi::DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
         let args: Vec<String> = std::env::args().collect();
+        if args.iter().any(|arg|arg=="--list-microphones") {
+            println!("{}",serde_json::to_string(&audio::devices()).unwrap());return;
+        }
         if args.iter().any(|arg| arg == "--quit-running") {
             for class in ["DictatelyNativeOverlay","TranscribrNativeOverlay","TranscriberNativeOverlay"] {
             let window = FindWindowW(wide(class).as_ptr(), std::ptr::null());
@@ -690,6 +699,7 @@ fn main() {
                 let mut python=Command::new(root.join(".venv/Scripts/pythonw.exe"));python.arg(root.join("app/settings_window.py"));python
             };
             if args.iter().any(|arg|arg=="--shortcuts") {command.arg("--shortcuts");}
+            if args.iter().any(|arg|arg=="--preferences") {command.arg("--preferences");}
             if command.current_dir(&root).env("DICTATELY_ROOT",&root).creation_flags(0x08000000).spawn().is_err() {std::process::exit(1);}
             return;
         }
@@ -705,7 +715,7 @@ fn main() {
         let _ = fs::write(data.join("settings.json"), serde_json::to_vec_pretty(&settings).unwrap());
         if args.iter().any(|a| a == "--enable-startup") { set_startup(&root, true); return; }
         if args.iter().any(|a| a == "--check-mic") {
-            let result = match audio::Capture::start() {
+            let result = match audio::Capture::start(&settings.microphone) {
                 Ok(mut capture) => {
                     // Simulate a blocked editor/UI; capture must keep recycling.
                     std::thread::sleep(Duration::from_millis(1500));
@@ -780,5 +790,14 @@ fn main() {
     #[test] fn defaults_locked_english() {
         let defaults=Settings::default();assert_eq!(defaults.language,"en");
         assert_eq!(defaults.dictation_hotkey,123);assert_eq!(defaults.language_hotkey,121);
+        assert_eq!(defaults.overlay_position,"bottom_center");assert!(defaults.microphone.is_empty());
+    }
+    #[test] fn preferences_survive_language_and_shortcut_serialization() {
+        let mut settings:Settings=serde_json::from_str(r#"{"microphone":"stable-usb-endpoint","overlay_position":"top_right","language":"id"}"#).unwrap();
+        settings.language="both".into();settings.language_hotkey=889;
+        let saved=serde_json::to_string(&settings).unwrap();
+        let loaded:Settings=serde_json::from_str(&saved).unwrap();
+        assert_eq!(loaded.microphone,"stable-usb-endpoint");assert_eq!(loaded.overlay_position,"top_right");
+        assert_eq!(loaded.language,"both");assert_eq!(loaded.language_hotkey,889);
     }
 }

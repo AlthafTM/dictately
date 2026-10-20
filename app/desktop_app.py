@@ -19,9 +19,10 @@ import threading
 import time
 
 from runtime_paths import app_root, user_data_dir
+from ui_preferences import POSITIONS, position_name, overlay_origin, desktop_microphones, resolve_microphone
 
 ROOT = app_root()
-DEFAULTS = {"language":"en", "cleanup":True, "accuracy":False, "vocabulary":""}
+DEFAULTS = {"language":"en", "cleanup":True, "accuracy":False, "vocabulary":"", "overlay_position":"bottom_center", "microphone":None}
 
 
 def read_json(path, default):
@@ -154,7 +155,7 @@ def run_desktop(smoke=False, probe=None):
     import sounddevice as sd
     from PySide6.QtCore import Qt, QTimer, QRectF, QLockFile
     from PySide6.QtGui import QAction, QActionGroup, QColor, QIcon, QLinearGradient, QPainter, QPen
-    from PySide6.QtWidgets import QApplication, QWidget, QSystemTrayIcon, QMenu, QMessageBox, QDialog, QVBoxLayout, QTextEdit, QPushButton
+    from PySide6.QtWidgets import QApplication, QWidget, QSystemTrayIcon, QMenu, QMessageBox, QDialog, QVBoxLayout, QTextEdit, QPushButton, QFormLayout, QComboBox, QLabel
 
     app = QApplication(sys.argv[:1])
     app.setApplicationName("Dictately")
@@ -175,11 +176,12 @@ def run_desktop(smoke=False, probe=None):
             self.setAttribute(Qt.WA_ShowWithoutActivating)
             self.resize(140, 42)
             self.progress = 0.; self.goal = 0.; self.level = 0.; self.phase = 0.
+            self.position='bottom_center'
             self.timer = QTimer(self); self.timer.timeout.connect(self.animate)
         def open(self):
             screen = app.screenAt(__import__('PySide6.QtGui', fromlist=['QCursor']).QCursor.pos()) or app.primaryScreen()
             bounds = screen.availableGeometry()
-            self.move(bounds.center().x() - self.width() // 2, bounds.bottom() - 62)
+            self.move(*overlay_origin((bounds.x(),bounds.y(),bounds.width(),bounds.height()),(self.width(),self.height()),22,self.position))
             self.goal = 1.; self.show(); self.timer.start(16)
         def close_wave(self):
             self.goal = 0.; self.timer.start(16)
@@ -229,6 +231,7 @@ def run_desktop(smoke=False, probe=None):
                 self.group.addAction(action); self.menu.addAction(action)
             self.menu.addSeparator()
             self.menu.addAction('History / copy transcript', self.show_history)
+            self.menu.addAction('Audio & appearance', self.show_preferences)
             self.menu.addAction('Cancel dictation', self.cancel)
             self.menu.addSeparator(); self.menu.addAction('Quit', self.quit)
             self.tray.setContextMenu(self.menu); self.tray.show()
@@ -259,6 +262,7 @@ def run_desktop(smoke=False, probe=None):
             self.session += 1; self.request=0; self.buffer=PhraseBuffer(); self.transcript=''; self.last_injected=''
             self.blocked=False; self.session_settings=dict(self.settings)
             self.started=time.monotonic(); self.last_voice=self.started; self.last_request=0.; self.starting=True
+            self.window.position=self.settings.get('overlay_position','bottom_center')
             self.window.open()
             token=self.session
             # PortAudio device opening and model loading never block the UI thread.
@@ -266,7 +270,9 @@ def run_desktop(smoke=False, probe=None):
                 def callback(indata, frames, timing, status):
                     try: self.audio.put_nowait((token, bytes(indata), bool(status)))
                     except queue.Full: self.events.put('overflow')
-                stream=sd.RawInputStream(samplerate=16000,channels=1,dtype='int16',blocksize=1600,callback=callback)
+                preference=self.session_settings.get('microphone')
+                device=resolve_microphone(preference,desktop_microphones(sd)) if preference else None
+                stream=sd.RawInputStream(device=device,samplerate=16000,channels=1,dtype='int16',blocksize=1600,callback=callback)
                 try: stream.start()
                 except Exception:
                     stream.close(); raise
@@ -369,6 +375,50 @@ def run_desktop(smoke=False, probe=None):
                 self.history=[];write_json(data / 'desktop-history.json',[]);text.clear()
             clear.clicked.connect(clear_history);layout.addWidget(clear)
             self.history_dialog=dialog;dialog.show();dialog.raise_();dialog.activateWindow()
+        def show_preferences(self):
+            if self.recording or self.starting or self.finishing:
+                self.notice('Finish dictation before changing audio preferences');return
+            if getattr(self,'preferences_dialog',None) and self.preferences_dialog.isVisible():
+                self.preferences_dialog.raise_();self.preferences_dialog.activateWindow();return
+            dialog=QDialog();dialog.setWindowTitle('Dictately · Audio & appearance');dialog.setMinimumWidth(440)
+            layout=QVBoxLayout(dialog);layout.setContentsMargins(24,24,24,24);layout.setSpacing(14)
+            form=QFormLayout();form.setSpacing(14)
+            microphones=QComboBox();positions=QComboBox()
+            for label,code in POSITIONS.items():positions.addItem(label,code)
+            positions.setCurrentText(position_name(self.settings.get('overlay_position')))
+            form.addRow('Microphone',microphones);form.addRow('Waveform position',positions);layout.addLayout(form)
+            feedback=QLabel('Choose a default microphone and where the waveform appears');feedback.setWordWrap(True);layout.addWidget(feedback)
+            refresh=QPushButton('Refresh microphones');save=QPushButton('Save preferences')
+            layout.addWidget(refresh);layout.addWidget(save)
+            selected=self.settings.get('microphone')
+            def load_microphones():
+                preference=microphones.currentData() if microphones.count() else selected
+                refresh.setEnabled(False);save.setEnabled(False)
+                future=self.pool.submit(lambda:desktop_microphones(sd))
+                def loaded():
+                    if not dialog.isVisible():return
+                    if not future.done():QTimer.singleShot(50,loaded);return
+                    microphones.clear();microphones.addItem('System default',None)
+                    try:
+                        devices=future.result()
+                        for device in devices:
+                            identity={'name':device['name'],'host':device['host']}
+                            microphones.addItem(f"{device['name']} ({device['host']}, {device['index']+1})",identity)
+                        index=next((i for i in range(microphones.count()) if microphones.itemData(i)==preference),-1)
+                        if index<0:
+                            microphones.addItem('Saved microphone (unavailable)',preference);index=microphones.count()-1
+                        microphones.setCurrentIndex(index)
+                        feedback.setText('Preferences apply to your next recording')
+                    except Exception as error:
+                        if preference:microphones.addItem('Saved microphone (unavailable)',preference);microphones.setCurrentIndex(1)
+                        feedback.setText(str(error))
+                    refresh.setEnabled(True);save.setEnabled(True)
+                QTimer.singleShot(50,loaded)
+            def save_preferences():
+                self.settings.update(microphone=microphones.currentData(),overlay_position=positions.currentData())
+                write_json(data/'desktop-settings.json',self.settings);dialog.accept()
+            refresh.clicked.connect(load_microphones);save.clicked.connect(save_preferences)
+            self.preferences_dialog=dialog;dialog.show();dialog.raise_();dialog.activateWindow();load_microphones()
         def quit(self):
             self.cancel()
             for hook in self.hooks:

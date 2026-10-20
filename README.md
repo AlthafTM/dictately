@@ -36,6 +36,8 @@ See the [strengths, weaknesses, and Wispr Flow comparison report](docs/WISPR-FLO
 - **GPU acceleration**: CUDA INT8/FP16 on compatible NVIDIA hardware, with a slower CPU INT8 fallback
 - **Local model choices**: keep Turbo, switch to multilingual Small, or try full Large-v3 using the [step-by-step guide](docs/AI-MODELS.md)
 - **Quiet desktop UI**: native Rust controller, text-free waveform, smooth opening/closing animations, and a monochrome glass effect
+- **Six overlay positions**: top or bottom, aligned left, center, or right; bottom center is the default
+- **Preferred microphone**: follow the system default or remember a specific input device
 - **Optional startup**: launch quietly when you sign in to Windows
 - **Local history**: retain up to 50 original and cleaned transcripts, with copy and clear controls
 
@@ -125,9 +127,14 @@ Setup builds the native controller if `Dictately.exe` is missing. Use `-Rebuild`
 | Tray icon | Language, history/settings, startup, and quit |
 | History & settings | Copy transcripts, clear history, edit vocabulary, accuracy, cleanup, and startup |
 | Keyboard shortcuts | Click a shortcut, press your preferred key/combination, then save |
+| Audio & appearance | Choose your microphone and waveform position, then save |
 | `scripts/windows/Stop Dictately.ps1` | Stop the installed controller from PowerShell |
 
 **Default Windows shortcuts: F12 for dictation and F10 for language selection.** Both are configurable during setup or from **Tray → Keyboard shortcuts**. A **Dictately Settings** Start-menu launcher also opens the editor, with a shortcuts control at its bottom left. Esc cancels shortcut capture; duplicate assignments and modifier-only shortcuts are rejected. Windows-reserved shortcuts may be unavailable, and assigning a normal typing key consumes that key globally while Dictately runs.
+
+Open **Tray → Audio & appearance** to select **Bottom left / center / right** or **Top left / center / right**. The waveform and Windows language picker use that location on the active monitor, with room for the taskbar. **Bottom center** is the default. Changes apply to the next recording or picker opening.
+
+In the same panel, choose **System default** to follow your operating system's microphone setting, or select a specific device and save it as your preferred microphone. Use **Refresh** after connecting a new device. Windows remembers the endpoint identity rather than its changing list position. If a saved device is disconnected, choose an available microphone or System default before recording. These controls are also available in the macOS/Linux tray menu; those editions match device name and audio host, and reject ambiguous duplicate matches.
 
 **English** and **Indonesian** modes stay locked for the recording. **Both** enables local per-segment language selection with candidates restricted to English and Indonesian; it does not translate. Rapid switching within a sentence can still be less reliable than a fixed mode. Pressing the language shortcut during dictation finishes the current phrase before opening the picker. Picker speech is used only for language commands, never inserted or saved as a dictation. Click an option if a voice command is unclear. The picker closes after 30 seconds or when you use your language-selection shortcut again or press Esc. After choosing, use your dictation shortcut to start speaking. The language picker and custom Windows shortcuts are part of the Windows controller; the experimental Mac/Linux frontend keeps its separately documented controls.
 

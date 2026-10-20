@@ -8,9 +8,11 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, messagebox
 import winreg
+import subprocess
 
 from runtime_paths import app_root, user_data_dir
 from hotkeys import capture_shortcut, shortcut_name, valid_shortcut, DICTATION_DEFAULT, LANGUAGE_DEFAULT
+from ui_preferences import POSITIONS, position_name
 ROOT = app_root()
 DATA = user_data_dir()
 BG, CARD, FIELD, TEXT, MUTED, ACCENT = "#111111", "#1d1d1d", "#2a2a2a", "#f1f1f1", "#aaaaaa", "#e5e5e5"
@@ -83,9 +85,11 @@ class Window:
         history = ttk.Frame(tabs, padding=(0, 18))
         settings = ttk.Frame(tabs, padding=(0, 22))
         shortcuts = ttk.Frame(tabs, padding=(0,22))
+        preferences = ttk.Frame(tabs, padding=(0,22))
         tabs.add(history, text="Recent dictations")
         tabs.add(settings, text="Settings")
         tabs.add(shortcuts,text="Keyboard shortcuts")
+        tabs.add(preferences,text="Audio & appearance")
         self.list = tk.Listbox(history, height=6, bg=CARD, fg=TEXT, selectbackground="#444444", selectforeground=TEXT,
             font=("Segoe UI", 11), bd=0, highlightthickness=0, activestyle="none", exportselection=False)
         self.list.pack(fill="x")
@@ -99,6 +103,22 @@ class Window:
         ttk.Button(buttons, text="Copy original", command=lambda: self.copy("raw")).pack(side="left", padx=8)
         ttk.Button(buttons, text="Clear history", command=self.clear).pack(side="right")
         current = read(DATA / "settings.json", {})
+        ttk.Label(preferences, text="Microphone", font=("Segoe UI", 13, "bold")).pack(anchor='w')
+        ttk.Label(preferences, text="Follow the Windows default or remember a specific microphone", style='Muted.TLabel').pack(anchor='w',pady=(5,12))
+        row=ttk.Frame(preferences);row.pack(fill='x')
+        self.microphone=tk.StringVar()
+        self.microphone_choices={'System default': ''}
+        self.microphone_box=ttk.Combobox(row,textvariable=self.microphone,state='readonly',font=('Segoe UI',11))
+        self.microphone_box.pack(side='left',fill='x',expand=True)
+        ttk.Button(row,text='Refresh',command=self.refresh_microphones).pack(side='right',padx=(10,0))
+        ttk.Label(preferences,text="Waveform position",font=('Segoe UI',13,'bold')).pack(anchor='w',pady=(26,10))
+        self.overlay_position=tk.StringVar(value=position_name(current.get('overlay_position')))
+        ttk.Combobox(preferences,values=list(POSITIONS),textvariable=self.overlay_position,state='readonly',font=('Segoe UI',11)).pack(fill='x')
+        ttk.Label(preferences,text='Position applies to the waveform and language picker on the active screen',style='Muted.TLabel',wraplength=680).pack(anchor='w',pady=(10,22))
+        self.preferences_feedback=tk.StringVar()
+        ttk.Label(preferences,textvariable=self.preferences_feedback,style='Muted.TLabel',wraplength=680).pack(anchor='w',pady=(0,12))
+        ttk.Button(preferences,text='Save preferences',style='Accent.TButton',command=self.save_preferences).pack(anchor='e')
+        self.refresh_microphones(current.get('microphone',''))
         language_code = current.get("language", "en")
         self.language = tk.StringVar(value=next((name for name, code in LANGUAGES.items() if code == language_code), next(iter(LANGUAGES))))
         ttk.Label(settings, text="Recognition language", font=("Segoe UI", 13, "bold")).pack(anchor="w")
@@ -136,6 +156,7 @@ class Window:
         ttk.Button(actions,text='Restore F12 / F10',command=self.reset_shortcuts).pack(side='left')
         ttk.Button(actions,text='Save shortcuts',style='Accent.TButton',command=self.save_shortcuts).pack(side='right')
         if '--shortcuts' in sys.argv:tabs.select(shortcuts)
+        if '--preferences' in sys.argv:tabs.select(preferences)
         bottom=ttk.Frame(outer);bottom.pack(fill='x',pady=(14,0))
         ttk.Button(bottom,text='Keyboard shortcuts',command=lambda:tabs.select(shortcuts)).pack(side='left')
         ttk.Label(bottom, text="Local phrase dictation", style="Muted.TLabel").pack(side='right')
@@ -156,6 +177,29 @@ class Window:
         if self.rows:
             self.list.selection_set(0)
         self.show_entry()
+
+    def refresh_microphones(self, selected=None):
+        if selected is None:
+            selected=self.microphone_choices.get(self.microphone.get(),'')
+        choices={'System default': ''}
+        try:
+            result=subprocess.run([str(ROOT/'Dictately.exe'),'--list-microphones'],capture_output=True,text=True,encoding='utf-8',check=True,timeout=10,creationflags=subprocess.CREATE_NO_WINDOW)
+            for device in json.loads(result.stdout):
+                choices[f"{device['name']}  ({device['index']+1})"]=device['id']
+            self.preferences_feedback.set('A disconnected preferred microphone must be reselected before recording')
+        except (OSError,ValueError,subprocess.SubprocessError):
+            self.preferences_feedback.set('Could not list microphones. Reconnect your device and press Refresh')
+        if selected and selected not in choices.values():
+            choices['Saved microphone (unavailable)']=selected
+        self.microphone_choices=choices
+        self.microphone_box.configure(values=list(choices))
+        self.microphone.set(next((name for name,value in choices.items() if value==selected),'System default'))
+
+    def save_preferences(self):
+        current=read(DATA/'settings.json',{})
+        current.update(microphone=self.microphone_choices[self.microphone.get()],overlay_position=POSITIONS[self.overlay_position.get()])
+        write(DATA/'settings.json',current)
+        self.preferences_feedback.set('Saved · applies to the next recording or language picker')
 
     def poll(self):
         if read(DATA / "history.json", []) != self.rows:

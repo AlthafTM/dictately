@@ -15,15 +15,15 @@ using Microsoft.Win32;
 [assembly: AssemblyTitle("Dictately Setup")]
 [assembly: AssemblyProduct("Dictately")]
 [assembly: AssemblyCompany("AlthafTM")]
-[assembly: AssemblyVersion("0.8.1.0")]
-[assembly: AssemblyFileVersion("0.8.1.0")]
+[assembly: AssemblyVersion("0.9.0.0")]
+[assembly: AssemblyFileVersion("0.9.0.0")]
 
 namespace DictatelySetup {
     internal static class Core {
         internal const string Identity = "Dictately:{5BFCCF8A-BAA9-48DF-917C-D1DFE4ABCF88}";
         internal const string LegacyIdentity = "Transcribr:{5BFCCF8A-BAA9-48DF-917C-D1DFE4ABCF88}";
         internal const string LegacyUninstallKey = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\Transcribr";
-        internal const string Version = "0.8.1";
+        internal const string Version = "0.9.0";
         internal const string UninstallKey = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\Dictately";
         internal const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
         internal static CancellationTokenSource Cancel = new CancellationTokenSource();

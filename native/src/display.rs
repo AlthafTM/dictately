@@ -7,6 +7,17 @@ pub const HEIGHT: i32 = 36;
 const SS: i32 = 2;
 const PROFILE: usize = 1024;
 
+pub fn valid_position(position:&str)->bool {
+    matches!(position,"bottom_left"|"bottom_center"|"bottom_right"|"top_left"|"top_center"|"top_right")
+}
+fn overlay_origin(work:RECT,width:i32,height:i32,margin:i32,position:&str)->(i32,i32) {
+    let left=work.left+margin;let right=(work.right-width-margin).max(work.left);
+    let top=work.top+margin;let bottom=(work.bottom-height-margin).max(work.top);
+    let x=if position.ends_with("_left") {left.min(right)} else if position.ends_with("_right") {right} else {work.left+(work.right-work.left-width).max(0)/2};
+    let y=if position.starts_with("top_") {top.min(bottom)} else {bottom};
+    (x,y)
+}
+
 struct Edge { index: usize, position: f32, strength: f32 }
 pub struct Display {
     pub hwnd: HWND,
@@ -16,6 +27,7 @@ pub struct Display {
     pub recording: bool,
     pub language: String,
     pub wave: VecDeque<f32>,
+    pub position:String,
     picker:bool,
     pub selected:usize,
     pub hovered:Option<usize>,
@@ -138,7 +150,7 @@ impl Display {
         let screen=GetDC(std::ptr::null_mut()); let dc=CreateCompatibleDC(screen); ReleaseDC(std::ptr::null_mut(),screen);
         let now=Instant::now();
         let mut result=Self { hwnd,title:String::new(),subtitle:String::new(),preview:String::new(),recording:false,
-            language:"EN".into(),wave:VecDeque::from(vec![0.;20]),visible:false,closing:false,animation:now,cue_at:now,
+            language:"EN".into(),wave:VecDeque::from(vec![0.;20]),position:"bottom_center".into(),visible:false,closing:false,animation:now,cue_at:now,
             end_started:None,origin:(0,0),dpi:0,width:0,height:0,rw:0,rh:0,sample_scale:2.,dc,
             panel_progress:0.,content_progress:0.,transition_panel:0.,transition_content:0.,
             picker:false,selected:0,hovered:None,logical_width:WIDTH,logical_height:HEIGHT,labels:Vec::new(),options:Vec::new(),
@@ -354,7 +366,7 @@ impl Display {
         // Move while hidden first so GetDpiForWindow reports the destination monitor.
         if !self.visible { SetWindowPos(self.hwnd,std::ptr::null_mut(),work.left+(work.right-work.left)/2,work.bottom-80,0,0,SWP_NOSIZE|SWP_NOZORDER|SWP_NOACTIVATE); }
         self.configure(GetDpiForWindow(self.hwnd).max(96));
-        self.origin=(work.left+(work.right-work.left-self.width)/2,work.bottom-self.height-(22.*self.dpi as f32/96.).round() as i32);
+        self.origin=overlay_origin(work,self.width,self.height,(22.*self.dpi as f32/96.).round() as i32,&self.position);
         if !self.visible||self.closing {
             self.transition_panel=if self.visible {self.panel_progress}else{0.};
             self.transition_content=if self.visible {self.content_progress}else{0.};
@@ -442,7 +454,8 @@ impl Display {
             let a=samples.iter().map(|p|p>>24).sum::<u32>();let c=samples.iter().map(|p|p&255).sum::<u32>();
             let a=(a+2)/4;let c=(c+2)/4;output[(y*self.width+x) as usize]=c|c<<8|c<<16|a<<24;
         }}
-        let destination=POINT{x:self.origin.0,y:self.origin.1+((1.-progress)*12.*self.dpi as f32/96.) as i32};
+        let direction=if self.position.starts_with("top_") {-1.}else{1.};
+        let destination=POINT{x:self.origin.0,y:self.origin.1+(direction*(1.-progress)*12.*self.dpi as f32/96.) as i32};
         let size=SIZE{cx:self.width,cy:self.height};let source=POINT{x:0,y:0};
         let blend=BLENDFUNCTION{BlendOp:AC_SRC_OVER as u8,BlendFlags:0,SourceConstantAlpha:(progress*255.) as u8,AlphaFormat:AC_SRC_ALPHA as u8};
         UpdateLayeredWindow(self.hwnd,std::ptr::null_mut(),&destination,&size,self.dc,&source,0,&blend,ULW_ALPHA);
@@ -471,6 +484,17 @@ impl Drop for Display {fn drop(&mut self){
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn positions_respect_work_area_scaling_and_negative_monitor_coordinates() {
+        let area=RECT{left:-1920,top:0,right:0,bottom:1040};
+        for (position,expected) in [("bottom_left",(-1898,982)),("bottom_center",(-1028,982)),("bottom_right",(-158,982)),("top_left",(-1898,22)),("top_center",(-1028,22)),("top_right",(-158,22))] {
+            assert!(valid_position(position));assert_eq!(overlay_origin(area,136,36,22,position),expected);
+        }
+        let tiny=RECT{left:0,top:0,right:80,bottom:20};
+        assert_eq!(overlay_origin(tiny,136,36,44,"top_right"),(0,0));
+        assert!(!valid_position("sideways"));
+    }
 
     #[test]
     fn rounded_geometry_fast_path_matches_distance_formula() {

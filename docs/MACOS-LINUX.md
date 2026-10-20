@@ -106,6 +106,8 @@ Downloads use a single Hugging Face revision and the Hub's snapshot/cache mechan
 
 **History / copy transcript** lets you copy or clear the last 50 transcripts, stored on your own disk. Audio stays in memory during a session and is not saved to recordings. Clipboard contents become the latest pasted phrase. To change recognition hints, accuracy, or cleanup, quit and edit `desktop-settings.json` (`vocabulary`, `accuracy`, `cleanup`); language is `en` or `id`.
 
+**Audio & appearance** in the tray menu lets you save a preferred microphone and choose one of six waveform positions: bottom or top, aligned left, center, or right. Bottom center and the system-default microphone are the defaults. Refresh the device list after connecting a microphone; enumeration runs outside the GUI thread. Preferences apply to the next recording. Named microphones are matched by audio host and name rather than a volatile numeric index. A missing or ambiguous match stops capture with an explanation; select another device or System default. These preferences are separate from Windows settings.
+
 ## Current limits
 
 - This experimental frontend has phrase output, language locking, light cleanup, no final full stops, history, animation, launchers, and optional startup
