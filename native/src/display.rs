@@ -26,6 +26,7 @@ pub struct Display {
     rail:Vec<(usize,f32,f32)>,
     selected_position:f32,
     hover_levels:[f32;3],
+    mic_level:f32,
     visible: bool,
     closing: bool,
     animation: Instant,
@@ -61,6 +62,8 @@ pub struct Display {
     last_preview: Instant,
     frame_dir: Option<std::path::PathBuf>,
     frame_index: usize,
+    metrics:Option<(std::path::PathBuf,Vec<[f64;4]>)>,
+    metrics_started:Instant,
 }
 fn smooth(v: f32) -> f32 { let v=v.clamp(0.,1.); v*v*(3.-2.*v) }
 fn capsule_distance(x: f32, y: f32, hw: f32, hh: f32, radius: f32) -> f32 {
@@ -139,12 +142,13 @@ impl Display {
             end_started:None,origin:(0,0),dpi:0,width:0,height:0,rw:0,rh:0,sample_scale:2.,dc,
             panel_progress:0.,content_progress:0.,transition_panel:0.,transition_content:0.,
             picker:false,selected:0,hovered:None,logical_width:WIDTH,logical_height:HEIGHT,labels:Vec::new(),options:Vec::new(),
-            rail:Vec::new(),selected_position:0.,hover_levels:[0.;3],
+            rail:Vec::new(),selected_position:0.,hover_levels:[0.;3],mic_level:0.,
             bitmap:std::ptr::null_mut(),old_bitmap:std::ptr::null_mut(),pixels:std::ptr::null_mut(),frame:Vec::new(),content:Vec::new(),
             background:Vec::new(),picker_background:Vec::new(),controls_dirty:true,body_shades:Vec::new(),rim_shades:Vec::new(),edges:Vec::new(),shine:[0.;PROFILE],
             levels:[0.;20],last_frame:now,preview_path:std::env::var_os("LOCALFLOW_PREVIEW_DIR")
                 .map(|p|std::path::PathBuf::from(p).join("glass-frame.bgra")),last_preview:now,
-            frame_dir:std::env::var_os("TRANSCRIBER_ANIMATION_FRAMES").map(std::path::PathBuf::from),frame_index:0 };
+            frame_dir:std::env::var_os("TRANSCRIBER_ANIMATION_FRAMES").map(std::path::PathBuf::from),frame_index:0,
+            metrics:std::env::var_os("DICTATELY_FRAME_METRICS").map(|path|(path.into(),Vec::new())),metrics_started:now };
         for (i,value) in result.shine.iter_mut().enumerate() {
             let d=(i as f32/PROFILE as f32).min(1.-i as f32/PROFILE as f32);
             *value=(-(d/0.055).powi(2)).exp();
@@ -211,7 +215,7 @@ impl Display {
         }
     }
     pub unsafe fn set_picker(&mut self,picker:bool) {
-        self.hovered=None;self.hover_levels.fill(0.);
+        self.hovered=None;self.hover_levels.fill(0.);self.mic_level=0.;
         if self.picker==picker {return;}
         self.picker=picker;self.hovered=None;
         self.logical_width=if picker {380}else{WIDTH};self.logical_height=if picker {112}else{HEIGHT};
@@ -273,8 +277,9 @@ impl Display {
             self.content[start+(328.*self.sample_scale) as usize..start+(353.*self.sample_scale) as usize].fill(0);
         }
         let level=self.wave.back().copied().unwrap_or(0.);
+        self.mic_level+=(level-self.mic_level)*(1.-(-dt/0.055).exp());
         for i in 0..5 {
-            let height=4.+(level*15.+2.)*(0.5+0.5*(age*7.+i as f32).sin());let cx=330.+i as f32*5.;
+            let height=4.+(self.mic_level*15.+2.)*(0.5+0.5*(age*7.+i as f32).sin());let cx=330.+i as f32*5.;
             for y in ((27.-height/2.-1.)*self.sample_scale) as i32..((27.+height/2.+1.)*self.sample_scale) as i32 {
                 for x in ((cx-2.)*self.sample_scale) as i32..((cx+2.)*self.sample_scale) as i32 {
                     if x<0||y<0||x>=self.rw||y>=self.rh {continue;}
@@ -365,7 +370,7 @@ impl Display {
     pub fn is_visible(&self)->bool { self.visible }
     pub unsafe fn animate(&mut self) {
         if !self.visible||self.pixels.is_null() { return; }
-        let now=Instant::now();let dt=now.duration_since(self.last_frame).as_secs_f32().min(0.05);self.last_frame=now;
+        let now=Instant::now();let interval=now.duration_since(self.last_frame).as_secs_f64();let dt=(interval as f32).min(0.05);self.last_frame=now;
         let age=self.animation.elapsed().as_secs_f32();let t=(age/if self.closing {0.34}else{0.42}).min(1.);
         if self.closing&&t>=1. { ShowWindow(self.hwnd,SW_HIDE);self.visible=false;return; }
         let progress=if self.closing {self.transition_panel*(1.-smooth(t))}
@@ -441,6 +446,9 @@ impl Display {
         let size=SIZE{cx:self.width,cy:self.height};let source=POINT{x:0,y:0};
         let blend=BLENDFUNCTION{BlendOp:AC_SRC_OVER as u8,BlendFlags:0,SourceConstantAlpha:(progress*255.) as u8,AlphaFormat:AC_SRC_ALPHA as u8};
         UpdateLayeredWindow(self.hwnd,std::ptr::null_mut(),&destination,&size,self.dc,&source,0,&blend,ULW_ALPHA);
+        if let Some((_,frames))=&mut self.metrics {
+            frames.push([now.duration_since(self.metrics_started).as_secs_f64()*1000.,interval*1000.,now.elapsed().as_secs_f64()*1000.,if self.closing {1.}else{0.}]);
+        }
         if age<0.05 { SetWindowPos(self.hwnd,HWND_TOPMOST,0,0,0,0,SWP_NOACTIVATE|SWP_SHOWWINDOW|SWP_NOMOVE|SWP_NOSIZE); }
         if let Some(dir)=&self.frame_dir {
             let stage=if self.closing {"close"}else if self.recording&&t<1. {"open"}else if !self.recording {"ending"}else{"recording"};
@@ -455,7 +463,10 @@ impl Display {
     pub fn amplitude(&mut self,level:f32) {let target=((level*45.).ln_1p()/2.674).clamp(0.,1.);let before=self.wave.back().copied().unwrap_or(0.);self.wave.pop_front();self.wave.push_back(before*0.55+target*0.45);}
     pub unsafe fn paint(&self) {let mut ps:PAINTSTRUCT=zeroed();BeginPaint(self.hwnd,&mut ps);EndPaint(self.hwnd,&ps);}
 }
-impl Drop for Display {fn drop(&mut self){unsafe{SelectObject(self.dc,self.old_bitmap);DeleteObject(self.bitmap);DeleteDC(self.dc);}}}
+impl Drop for Display {fn drop(&mut self){
+    if let Some((path,frames))=&self.metrics {if let Ok(bytes)=serde_json::to_vec(frames) {let _=std::fs::write(path,bytes);}}
+    unsafe{SelectObject(self.dc,self.old_bitmap);DeleteObject(self.bitmap);DeleteDC(self.dc);}
+}}
 
 #[cfg(test)]
 mod tests {

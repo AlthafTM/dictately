@@ -5,6 +5,7 @@ mod typing;
 mod corrections;
 mod worker;
 mod hotkeys;
+mod frame_clock;
 
 use std::{collections::HashSet, fs, io::Write, os::windows::process::CommandExt, path::PathBuf,
     process::Command, sync::{atomic::{AtomicBool, AtomicIsize, Ordering}, mpsc::{Receiver, Sender}}, time::{Duration, Instant, SystemTime, UNIX_EPOCH}};
@@ -56,6 +57,7 @@ struct App {
     tray: NOTIFYICONDATAW, icon: HICON, record_icon: HICON,
     test_samples: Option<Vec<i16>>, test_offset: usize, test_target: Option<usize>,
     picker:bool, picker_pending:bool, picker_voice:Instant, picker_has_voice:bool, settings_checked:Instant,
+    frame_clock:bool,
 }
 
 impl App {
@@ -134,7 +136,7 @@ impl App {
             last_request: now, started: now, last_voice: now, last_work: now, last_insert: now,
             worker_loaded: false, hide_at: None, timer_interval:1000, raw: String::new(), cleaned: String::new(), pending: String::new(),
             inserted: 0, languages: HashSet::new(), speech_model:"loading".into(), tray, icon, record_icon, test_samples, test_offset: 0, test_target: None,
-            picker:false,picker_pending:false,picker_voice:now,picker_has_voice:false,settings_checked:now };
+            picker:false,picker_pending:false,picker_voice:now,picker_has_voice:false,settings_checked:now,frame_clock:false };
         app.apply_hotkeys();
         app.update_tip(); app
     }
@@ -475,12 +477,16 @@ impl App {
         if !self.recording && !self.finishing && !self.inflight && self.worker_loaded && self.last_work.elapsed() >= Duration::from_secs(90) {
             let _ = self.requests.send(worker::Work::Unload); self.worker_loaded = false; self.status("ready");
         }
-        if self.hide_at.is_some_and(|at| Instant::now() >= at) { self.display.hide(); self.hide_at = None; }
-        self.display.animate();
-        if self.picker_pending && !self.recording && !self.finishing && !self.inflight && !self.mic_stopping && !self.display.is_visible() {self.open_picker();}
+        if !self.frame_clock {self.frame();}
+        // Audio/controller polling may slow down; animation never follows it.
         let interval = if !self.recording && !self.finishing && !self.display.is_visible() { 1000 }
             else if self.recording && self.started.elapsed().as_millis() > 1200 { 33 } else { 16 };
         if interval != self.timer_interval { SetTimer(self.display.hwnd, 1, interval, None); self.timer_interval = interval; }
+    }
+    unsafe fn frame(&mut self) {
+        if self.hide_at.is_some_and(|at| Instant::now() >= at) {self.display.hide();self.hide_at=None;}
+        self.display.animate();
+        if self.picker_pending && !self.recording && !self.finishing && !self.inflight && !self.mic_stopping && !self.display.is_visible() {self.open_picker();}
     }
     unsafe fn menu(&mut self) {
         if !self.recording && !self.finishing { self.settings = Settings::load(&self.data); }
@@ -492,7 +498,11 @@ impl App {
             AppendMenuW(menu, MF_STRING | disabled | if checked { MF_CHECKED } else { 0 }, id, wide(title).as_ptr());
         }
         let mut point: POINT = std::mem::zeroed(); GetCursorPos(&mut point); SetForegroundWindow(self.display.hwnd);
+        // The system tray menu runs a nested Windows message loop. Keep the
+        // timer fallback painting until our frame-clock loop regains control.
+        let frame_clock=self.frame_clock;self.frame_clock=false;
         let selection = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON, point.x, point.y, 0, self.display.hwnd, std::ptr::null());
+        self.frame_clock=frame_clock;
         DestroyMenu(menu);
         match selection {
             100|108 => { self.open_settings(selection==108); }
@@ -595,6 +605,12 @@ unsafe extern "system" fn window_proc(hwnd: HWND, message: u32, wp: WPARAM, lp: 
         match message {
             WM_PAINT => { app.display.paint(); return 0; }
             WM_ERASEBKGND => return 1,
+            WM_SETCURSOR if lp as u32&0xffff==HTCLIENT => {
+                let mut point=POINT{x:0,y:0};GetCursorPos(&mut point);
+                windows_sys::Win32::Graphics::Gdi::ScreenToClient(hwnd,&mut point);
+                let cursor=if app.display.option_at(point.x,point.y).is_some() {IDC_HAND}else{IDC_ARROW};
+                SetCursor(LoadCursorW(std::ptr::null_mut(),cursor));return 1;
+            }
             WM_TIMER => { app.tick(); return 0; }
             TOGGLE => { app.toggle(wp as HWND); return 0; }
             LANGUAGE => {app.request_picker();return 0;}
@@ -712,7 +728,7 @@ fn main() {
         let test_samples = args.iter().position(|a| a == "--test-pcm").and_then(|i| args.get(i+1)).map(|path| {
             fs::read(path).unwrap().chunks_exact(2).map(|b| i16::from_le_bytes([b[0],b[1]])).collect::<Vec<_>>() });
         let instance = GetModuleHandleW(std::ptr::null()); let cls_name = wide("DictatelyNativeOverlay");
-        let class = WNDCLASSW { lpfnWndProc: Some(window_proc), hInstance: instance, lpszClassName: cls_name.as_ptr(), ..std::mem::zeroed() };
+        let class = WNDCLASSW { lpfnWndProc: Some(window_proc), hInstance: instance, hCursor:LoadCursorW(std::ptr::null_mut(),IDC_ARROW),lpszClassName: cls_name.as_ptr(), ..std::mem::zeroed() };
         RegisterClassW(&class);
         let hwnd = CreateWindowExW(WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_LAYERED, cls_name.as_ptr(), wide("Dictately").as_ptr(),
             WS_POPUP, 0, 0, display::WIDTH, display::HEIGHT, std::ptr::null_mut(), std::ptr::null_mut(), instance, std::ptr::null());
@@ -738,7 +754,21 @@ fn main() {
         }
         app.status("ready"); app.log("Native Rust controller ready"); SetTimer(hwnd, 1, 1000, None);
         let mut message: MSG = std::mem::zeroed();
-        while GetMessageW(&mut message, std::ptr::null_mut(), 0, 0) > 0 { TranslateMessage(&message); DispatchMessageW(&message); }
+        if let Some(mut clock)=frame_clock::FrameClock::new() {
+            app.frame_clock=true;
+            'messages:loop {
+                if clock.wait(app.display.is_visible()) {app.frame();}
+                // Bound message draining so pointer traffic cannot starve frames.
+                for _ in 0..64 {
+                    if PeekMessageW(&mut message,std::ptr::null_mut(),0,0,PM_REMOVE)==0 {break;}
+                    if message.message==WM_QUIT {break 'messages;}
+                    TranslateMessage(&message);DispatchMessageW(&message);
+                }
+            }
+        }else{
+            app.log("High-resolution frame clock unavailable; using controller timer");
+            while GetMessageW(&mut message, std::ptr::null_mut(), 0, 0) > 0 { TranslateMessage(&message); DispatchMessageW(&message); }
+        }
         UnhookWindowsHookEx(mouse_hook); UnhookWindowsHookEx(hook); CloseHandle(mutex);
         if !app.icon.is_null() { DestroyIcon(app.icon); } if !app.record_icon.is_null() { DestroyIcon(app.record_icon); }
         APP = std::ptr::null_mut();

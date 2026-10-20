@@ -96,3 +96,20 @@ A local comparison used the previous 0.7 executable and the new 0.8 executable w
 The live worker now owns only its speech model, avoiding initialization/imports for the unused generative rewriting server. Opening the language picker does not enqueue model preparation; silence keeps only a 200 ms audio lead-in and does not repeatedly run speech recognition. Mouse selection can operate after the model has unloaded without reloading it. Voice selection starts recognition asynchronously after microphone activity.
 
 Use `DICTATELY_DATA` / `DICTATELY_ROOT` for explicit development directories; legacy `LOCALFLOW_DATA` / `TRANSCRIBR_ROOT` overrides remain accepted. The new installer accepts the old managed install marker and reuses the model folder. User settings/history are copied to the new data directory only when missing. Branding compatibility strings in migration code are intentional.
+
+## Animation timing and cursor verification (0.8.1)
+
+The controller previously used the same `WM_TIMER` for audio polling and rendering. Its nominal 33 ms steady interval measured **46.86 ms median / 48.45 ms p95** on the development laptop, roughly 21 submitted frames per second. Rendering itself took a median 1.63 ms, so the timer cadence was the main limit in that test.
+
+A high-resolution one-shot waitable timer now drives visible animation at a target of 60 FPS. Deadlines remain on a fixed phase and skip missed intervals rather than queueing catch-up frames. Audio/controller polling remains separate. The frame timer is cancelled while hidden; no rendering thread or fast idle polling is added. Systems unable to create a timer retain the controller-timer fallback. The tray menu's nested message loop also uses that fallback while open.
+
+Owned-process tests with synthetic silence measured **16.69 ms median / 16.98 ms p95** for the picker and **16.68 ms median / 17.17 ms p95** for the waveform. These are local frame-submission intervals, not measured compositor/display presentation or guarantees on every device. The picker microphone level is interpolated between audio updates. The window class now has an arrow cursor, and client cursor handling selects an arrow or hand explicitly instead of inheriting a busy cursor.
+
+With the normal app stopped, run:
+
+```powershell
+.\.venv\Scripts\python.exe tests/check_animation.py
+.\.venv\Scripts\python.exe tests/check_animation.py --waveform
+```
+
+The tests never open the microphone or insert text. They use synthetic PCM, check cursor assignment/handling and frame intervals, and write ignored results under `qa/`. `DICTATELY_FRAME_METRICS` optionally records numeric submission timing; it contains no audio or transcript and is flushed only when the diagnostic process exits.
