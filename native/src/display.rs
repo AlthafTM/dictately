@@ -78,6 +78,7 @@ pub struct Display {
     transition_panel:f32,
     transition_content:f32,
     cue_at: Instant,
+    rim_at: Instant,
     end_started: Option<Instant>,
     origin: (i32, i32),
     dpi: u32,
@@ -128,17 +129,19 @@ fn content_phase(age:f32,closing:bool,from:f32)->f32 {
     if closing {from*(1.-smooth(age/0.20))}
     else {from+(1.-from)*smooth((age-0.055)/0.31)}
 }
-fn content_transform(panel:f32,content:f32)->(f32,f32,f32) {
-    ((panel*(0.94+0.06*content)).max(0.001),0.94+0.06*content,6.*(1.-content))
+fn option_center(option:usize,content:f32)->f32 {
+    190.+(option as f32-1.)*114.*content
 }
 fn picker_option(x:f32,y:f32,panel:f32,content:f32)->Option<usize> {
-    if content<0.1 {return None;}
-    let (sx,sy,rise)=content_transform(panel,content);
-    let x=(x-190.)/sx+190.;let y=(y-56.-rise)/sy+56.;
-    (0..3).find(|i| {let left=20.+*i as f32*114.;x>=left&&x<=left+112.&&y>=56.&&y<=92.})
+    if content<0.1 || (x-190.).abs()>15.+174.*panel {return None;}
+    let y=y-6.*(1.-content);
+    // The middle option takes precedence while the side options fade in.
+    [1,0,2].into_iter().find(|i| {
+        let opacity=if *i==1 {content}else{content*smooth((content-0.45)/0.55)};
+        opacity>=0.1 && (x-option_center(*i,content)).abs()<=56. && y>=56.&&y<=92.
+    })
 }
-// Content remains a complete layer while the shell changes width. Sampling
-// premultiplied gray and alpha together avoids dark fringes around moving text.
+// Sampling premultiplied gray and alpha together avoids dark fringes on text.
 fn blend_content(destination:u32,gray:f32,alpha:f32,opacity:f32)->u32 {
     let a=alpha*opacity/255.;
     let c=(gray*opacity+(destination&255) as f32*(1.-a)).round().clamp(0.,255.) as u32;
@@ -188,7 +191,7 @@ impl Display {
         let screen=GetDC(std::ptr::null_mut()); let dc=CreateCompatibleDC(screen); ReleaseDC(std::ptr::null_mut(),screen);
         let now=Instant::now();
         let mut result=Self { cached_surface:None,sampling_x:Vec::new(),edge_profile:[0.;PROFILE*2],hwnd,title:String::new(),subtitle:String::new(),preview:String::new(),recording:false,
-            language:"EN".into(),wave:VecDeque::from(vec![0.;20]),position:"bottom_center".into(),visible:false,closing:false,animation:now,cue_at:now,
+            language:"EN".into(),wave:VecDeque::from(vec![0.;20]),position:"bottom_center".into(),visible:false,closing:false,animation:now,cue_at:now,rim_at:now,
             end_started:None,origin:(0,0),dpi:0,width:0,height:0,rw:0,rh:0,sample_scale:2.,dc,
             panel_progress:0.,content_progress:0.,transition_panel:0.,transition_content:0.,
             picker:false,selected:0,hovered:None,logical_width:WIDTH,logical_height:HEIGHT,labels:Vec::new(),options:Vec::new(),
@@ -332,9 +335,6 @@ impl Display {
         self.controls_dirty|=before!=self.selected_position || hover_before!=self.hover_levels;
         if self.controls_dirty {
         self.content.fill(0);
-        for &(index,mask,shade) in &self.rail {
-            self.content[index]=over(self.content[index],shade,mask);
-        }
         for (option,pixels) in self.options.iter().enumerate() {
             for &(index,mask,vertical) in pixels {
                 let _=vertical;
@@ -363,6 +363,9 @@ impl Display {
             }}
         }
         self.picker_background.copy_from_slice(&self.background);
+        for &(index,mask,shade) in &self.rail {
+            self.picker_background[index]=over(self.picker_background[index],shade,mask);
+        }
         for (destination,source) in self.picker_background.iter_mut().zip(&self.content) {
             if source>>24>0 {*destination=blend_content(*destination,(source&255) as f32,(source>>24) as f32,1.);}
         }
@@ -393,6 +396,42 @@ impl Display {
         let shade=self.body_shades[index]*(1.-rim*0.65)+self.rim_shades[index]*rim*0.65;
         premultiplied(shade,(0.82+rim*0.14)*mask)
     }
+    // Translate canonical pixels at 1:1 scale: labels and card corners never stretch.
+    fn composite_region(&mut self,bounds:(f32,f32,f32,f32),offset:(f32,f32),opacity:f32) {
+        if opacity<=0. {return;}
+        let scale=self.sample_scale;
+        let (sl,sr,st,sb)=(bounds.0*scale,bounds.1*scale,bounds.2*scale,bounds.3*scale);
+        let (dx,dy)=(offset.0*scale,offset.1*scale);
+        let left=(sl+dx).floor().max(0.) as i32;
+        let right=(sr+dx).ceil().min(self.rw as f32) as i32;
+        let top=(st+dy).floor().max(0.) as i32;
+        let bottom=(sb+dy).ceil().min(self.rh as f32) as i32;
+        self.sampling_x.clear();
+        for x in left..right {
+            let px=x as f32-dx;
+            self.sampling_x.push(if px<sl || px>=sr-1. || px<0. || px>=self.rw as f32-1. {(usize::MAX,0.)}else{(px as usize,px-px.floor())});
+        }
+        for y in top..bottom {
+            let py=y as f32-dy;
+            if py<st || py>=sb-1. || py<0. || py>=self.rh as f32-1. {continue;}
+            let y0=py.floor() as usize;let fy=py-y0 as f32;
+            for x in left..right {
+                let destination=(y*self.rw+x) as usize;
+                if self.frame[destination]>>24==0 {continue;}
+                let (x0,fx)=self.sampling_x[(x-left) as usize];
+                if x0==usize::MAX {continue;}
+                let index=y0*self.rw as usize+x0;
+                let pixels=[self.content[index],self.content[index+1],self.content[index+self.rw as usize],self.content[index+self.rw as usize+1]];
+                if pixels.iter().all(|pixel|pixel>>24==0) {continue;}
+                let interpolate=|shift:u32| {
+                    let a=((pixels[0]>>shift)&255) as f32;let b=((pixels[1]>>shift)&255) as f32;
+                    let c=((pixels[2]>>shift)&255) as f32;let d=((pixels[3]>>shift)&255) as f32;
+                    let top=a+(b-a)*fx;top+(c+(d-c)*fx-top)*fy
+                };
+                self.frame[destination]=blend_content(self.frame[destination],interpolate(0),interpolate(24),opacity);
+            }
+        }
+    }
     fn composite_options(&mut self) {
         let opacity=self.content_progress;
         if opacity<=0. {return;}
@@ -405,42 +444,29 @@ impl Display {
             }
             return;
         }
-        let (sx,sy,rise)=content_transform(self.panel_progress,opacity);
-        let cx=self.rw as f32/2.;let cy=self.rh as f32/2.;
-        let rise=rise*self.sample_scale;
-        // Inverse mapping avoids gaps as the rail and glyphs widen together.
-        let left=(cx+(15.*self.sample_scale-cx)*sx).floor().max(0.) as i32;
-        let right=(cx+(365.*self.sample_scale-cx)*sx).ceil().min(self.rw as f32) as i32;
-        let top=(cy+(14.*self.sample_scale-cy)*sy+rise).floor().max(0.) as i32;
-        let bottom=(cy+(98.*self.sample_scale-cy)*sy+rise).ceil().min(self.rh as f32) as i32;
-        self.sampling_x.clear();
-        let inverse_x=1./sx;let inverse_y=1./sy;
-        for x in left..right {
-            let px=(x as f32+0.5-cx)*inverse_x+cx-0.5;
-            self.sampling_x.push(if px<0. || px>=self.rw as f32-1. {(usize::MAX,0.)}else{(px as usize,px-px.floor())});
-        }
-        for y in top..bottom {
-            let py=(y as f32+0.5-cy-rise)*inverse_y+cy-0.5;
-            if py<0. || py>=self.rh as f32-1. {continue;}
-            let y0=py.floor() as i32;let fy=py-y0 as f32;
-            for x in left..right {
-                let (x0,fx)=self.sampling_x[(x-left) as usize];
-                if x0==usize::MAX {continue;}
-                let index=y0 as usize*self.rw as usize+x0;
-                let pixels=[self.content[index],self.content[index+1],self.content[index+self.rw as usize],self.content[index+self.rw as usize+1]];
-                if pixels.iter().all(|pixel|pixel>>24==0) {continue;}
-                let interpolate=|shift:u32| {
-                    let a=((pixels[0]>>shift)&255) as f32;let b=((pixels[1]>>shift)&255) as f32;
-                    let c=((pixels[2]>>shift)&255) as f32;let d=((pixels[3]>>shift)&255) as f32;
-                    let top=a+(b-a)*fx;top+(c+(d-c)*fx-top)*fy
-                };
-                let gray=interpolate(0);let alpha=interpolate(24);
-                if alpha>0. {
-                    let destination=(y*self.rw+x) as usize;
-                    self.frame[destination]=blend_content(self.frame[destination],gray,alpha,opacity);
-                }
+        let rise=6.*(1.-opacity);
+        let half_width=60.+114.*opacity;
+        let scale=self.sample_scale;
+        // Only the rail changes width. Its corner radius stays constant.
+        for y in ((51.+rise)*scale).floor() as i32..((97.+rise)*scale).ceil() as i32 {
+            if y<0 || y>=self.rh {continue;}
+            for x in ((189.-half_width)*scale).floor().max(0.) as i32..((191.+half_width)*scale).ceil().min(self.rw as f32) as i32 {
+                let index=(y*self.rw+x) as usize;
+                if self.frame[index]>>24==0 {continue;}
+                let d=capsule_distance((x as f32+0.5)/scale-190.,(y as f32+0.5)/scale-74.-rise,half_width,22.,22.);
+                let mask=(0.5-d*scale).clamp(0.,1.);
+                if mask>0. {self.frame[index]=over(self.frame[index],19.+(1.-d.abs()).clamp(0.,1.)*31.,mask*opacity);}
             }
         }
+        // Options keep their shape and fade in as they separate from the center.
+        for option in [0,2,1] {
+            let left=19.+114.*option as f32;
+            let fade=if option==1 {opacity}else{opacity*smooth((opacity-0.45)/0.55)};
+            let offset=option_center(option,opacity)-(76.+114.*option as f32);
+            self.composite_region((left,left+114.,54.,94.),(offset,rise),fade);
+        }
+        let header_opacity=opacity*smooth((self.panel_progress-0.88)/0.12);
+        self.composite_region((23.,354.,14.,40.),(0.,rise),header_opacity);
     }
     fn write_dimensions(&self) {
         let value=format!("{{\"width\":{},\"height\":{},\"logical_width\":{},\"logical_height\":{},\"supersampling\":2,\"dpi\":{}}}",self.width,self.height,self.logical_width,self.logical_height,self.dpi);
@@ -462,6 +488,7 @@ impl Display {
         self.configure(GetDpiForWindow(self.hwnd).max(96));
         self.origin=overlay_origin(work,self.width,self.height,(22.*self.dpi as f32/96.).round() as i32,&self.position);
         if !self.visible||self.closing {
+            if !self.visible {self.rim_at=Instant::now();}
             self.transition_panel=if self.visible {self.panel_progress}else{0.};
             self.transition_content=if self.visible {self.content_progress}else{0.};
             self.animation=Instant::now();self.last_frame=Instant::now();self.visible=true;self.closing=false;self.selected_position=self.selected as f32;self.controls_dirty=true;
@@ -523,7 +550,7 @@ impl Display {
         self.content_progress=content_phase(age,self.closing,self.transition_content);
         let cue_age=self.cue_at.elapsed().as_secs_f32();
         if self.picker && self.content_progress>0. {self.render_options(cue_age,dt);}
-        self.render_shell(progress,(cue_age*0.36).fract());
+        self.render_shell(progress,(self.rim_at.elapsed().as_secs_f32()*0.36).fract());
         let ending=self.end_started.map(|at|smooth(at.elapsed().as_secs_f32()/0.55)).unwrap_or(0.);
         let spread=(0.12+0.88*progress)*(1.-ending*0.5);
         // Smoothstep has zero slope at both ends; exponential settling continues
@@ -706,12 +733,50 @@ mod tests {
 
     #[test]
     fn picker_hit_coordinates_follow_visible_options() {
-        // Early in entry English is visually inside the final Indonesia bounds.
-        assert_eq!(picker_option(124.9,78.,0.6,0.2),Some(0));
+        // The single middle card is interactive before the side cards emerge.
+        assert_eq!(picker_option(124.9,78.,0.6,0.2),None);
         assert_eq!(picker_option(190.,78.,0.6,0.2),Some(1));
-        assert_eq!(picker_option(255.1,78.,0.6,0.2),Some(2));
+        assert_eq!(picker_option(255.1,78.,0.6,0.2),None);
         assert_eq!(picker_option(190.,78.,0.6,0.05),None);
         assert_eq!(picker_option(190.,30.,1.,1.),None);
         assert_eq!(picker_option(304.,74.,1.,1.),Some(2));
+        for progress in [0.7,0.85,1.] {
+            for option in 0..3 {
+                let center=option_center(option,progress);
+                assert_eq!(picker_option(center,78.,1.,progress),Some(option));
+            }
+        }
+    }
+    #[test]
+    fn sliding_card_keeps_its_original_pixels_and_width() {
+        unsafe {
+            let mut display=Display::new(std::ptr::null_mut());
+            display.set_picker(true);display.configure(96);display.render_options(0.,0.);
+            let source=display.content.clone();let scale=display.sample_scale;
+            for shift in [0.,57.,114.] {
+                display.frame.fill(0xff000000);
+                display.composite_region((19.,133.,54.,94.),(shift,0.),1.);
+                let dx=(shift*scale) as i32;
+                for y in (54.*scale) as i32..(94.*scale) as i32 {
+                    for x in (19.*scale) as i32..(132.*scale) as i32 {
+                        let original=source[(y*display.rw+x) as usize]&255;
+                        let moved=display.frame[(y*display.rw+x+dx) as usize]&255;
+                        assert_eq!(moved,original,"Card pixel changed at {x}, {y}, shift {shift}");
+                    }
+                }
+            }
+        }
+    }
+    #[test]
+    fn stopping_keeps_the_rim_clock_running() {
+        unsafe {
+            let mut display=Display::new(std::ptr::null_mut());
+            display.rim_at=Instant::now()-std::time::Duration::from_millis(830);
+            let before=display.rim_at;
+            display.recording=false;display.cue("");
+            assert_eq!(display.rim_at,before);
+            assert!(display.end_started.is_some());
+            display.cue("");assert_eq!(display.rim_at,before);
+        }
     }
 }
