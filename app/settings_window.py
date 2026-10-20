@@ -165,6 +165,7 @@ class Window:
         self.root.after(2000, self.poll)
 
     def refresh(self):
+        self.history_stamp=self.history_version()
         self.rows = read(DATA / "history.json", [])
         self.list.delete(0, "end")
         for item in self.rows:
@@ -202,9 +203,15 @@ class Window:
         self.preferences_feedback.set('Saved · applies to the next recording or language picker')
 
     def poll(self):
-        if read(DATA / "history.json", []) != self.rows:
+        if self.history_version()!=self.history_stamp:
             self.refresh()
         self.root.after(2000, self.poll)
+
+    def history_version(self):
+        try:
+            status=(DATA/'history.json').stat()
+            return status.st_mtime_ns,status.st_size,status.st_ino
+        except OSError:return None
 
     def show_entry(self):
         self.detail.configure(state="normal")

@@ -101,11 +101,20 @@ def main():
         assert result['language'] in ('en','id')
         assert 'report' in result['cleaned'].lower() and 'tomorrow' in result['cleaned'].lower(),result
         print('Real local CPU model load and synthetic speech decode passed')
+        command=Path(temporary)/'language-command.wav'
+        if sys.platform=='darwin':
+            subprocess.run(['say','-o',str(command),'--file-format=WAVE','--data-format=LEI16@16000','English'],check=True)
+        else:
+            subprocess.run(['espeak','-w',str(command),'English'],check=True)
+        command_samples=(np.clip(decode_audio(str(command),sampling_rate=16000),-1,1)*32767).astype(np.int16)
+        selected=worker.process({'command':'select_language','id':3,'samples':command_samples})
+        assert selected['language']=='en',selected
+        print('Two-language command decoding with shared encoder passed')
         worker.engine.close()
         if sys.platform=='linux':
             subprocess.run(['xvfb-run','-a','sh','-c','openbox >/dev/null 2>&1 & exec "$@"','--',sys.executable,str(ROOT/'tests/check_x11_dictation.py'),str(speech)],env=env,check=True,timeout=180)
         report={'system':platform.platform(),'architecture':platform.machine(),
-                'verified':['shared unit tests','Qt waveform','capture lifecycle with fixtures','native launcher generation','real Small model CPU decode (English and bilingual mode)'],
+                'verified':['shared unit tests','Qt waveform','capture lifecycle with fixtures','native launcher generation','real Small model CPU decode (English and bilingual mode)','two-language command decoding with shared encoder'],
                 'not_verified':['physical microphone capture','everyday third-party apps','real-device permissions and hotkey conflicts']}
         if sys.platform=='linux':
             report['verified']+=['X11 native hotkey and paste','changed-window rejection','complete live dictation with synthetic capture']

@@ -23,6 +23,7 @@
   "assets/speech-model.json",
   "licenses/faster-whisper-LICENSE",
   "docs/DEVELOPMENT.md",
+  "docs/PERFORMANCE-REVIEW.md",
   "docs/AI-MODELS.md",
   "docs/WISPR-FLOW-COMPARISON.md",
   "LICENSE",

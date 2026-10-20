@@ -153,7 +153,7 @@ def start_hotkey(toggle, cancel):
 def run_desktop(smoke=False, probe=None):
     import numpy as np
     import sounddevice as sd
-    from PySide6.QtCore import Qt, QTimer, QRectF, QLockFile
+    from PySide6.QtCore import Qt, QTimer, QRectF, QLockFile, QObject, Signal
     from PySide6.QtGui import QAction, QActionGroup, QColor, QIcon, QLinearGradient, QPainter, QPen
     from PySide6.QtWidgets import QApplication, QWidget, QSystemTrayIcon, QMenu, QMessageBox, QDialog, QVBoxLayout, QTextEdit, QPushButton, QFormLayout, QComboBox, QLabel
 
@@ -176,18 +176,20 @@ def run_desktop(smoke=False, probe=None):
             self.setAttribute(Qt.WA_ShowWithoutActivating)
             self.resize(140, 42)
             self.progress = 0.; self.goal = 0.; self.level = 0.; self.phase = 0.
+            self.last_frame=time.monotonic()
             self.position='bottom_center'
             self.timer = QTimer(self); self.timer.timeout.connect(self.animate)
         def open(self):
             screen = app.screenAt(__import__('PySide6.QtGui', fromlist=['QCursor']).QCursor.pos()) or app.primaryScreen()
             bounds = screen.availableGeometry()
             self.move(*overlay_origin((bounds.x(),bounds.y(),bounds.width(),bounds.height()),(self.width(),self.height()),22,self.position))
-            self.goal = 1.; self.show(); self.timer.start(16)
+            self.goal = 1.; self.last_frame=time.monotonic(); self.show(); self.timer.start(16)
         def close_wave(self):
             self.goal = 0.; self.timer.start(16)
         def animate(self):
-            self.progress += (self.goal - self.progress) * .17
-            self.phase += .065
+            now=time.monotonic();dt=min(now-self.last_frame,.05);self.last_frame=now
+            self.progress += (self.goal - self.progress) * (1.-math.exp(-dt/.086))
+            self.phase += dt*4.0625
             if self.goal == 0 and self.progress < .005:
                 self.hide(); self.timer.stop()
             self.update()
@@ -208,12 +210,21 @@ def run_desktop(smoke=False, probe=None):
                 painter.setBrush(QColor(235,235,235))
                 painter.drawRoundedRect(QRectF(51+i*8,21-height/2,3.5,height),1.75,1.75)
 
+    class ControlQueue(QObject):
+        wake=Signal()
+        def __init__(self):
+            super().__init__();self.queue=queue.Queue()
+        def put(self,event):
+            self.queue.put(event);self.wake.emit()
+        def get_nowait(self):return self.queue.get_nowait()
+
     class Controller:
         def __init__(self):
             self.settings = {**DEFAULTS, **read_json(data / "desktop-settings.json", {})}
             if self.settings['language'] not in ('en','id'): self.settings['language'] = 'en'
             self.history = read_json(data / "desktop-history.json", [])
-            self.events = queue.Queue(); self.audio = queue.Queue(maxsize=400)
+            self.events = ControlQueue(); self.audio = queue.Queue(maxsize=400)
+            self.events.wake.connect(self.tick,Qt.QueuedConnection)
             self.pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="speech")
             self.future = None; self.speech = SpeechSession(data); self.stream = None
             self.recording = False; self.finishing = False; self.starting = False
@@ -244,7 +255,7 @@ def run_desktop(smoke=False, probe=None):
                 if not (data / 'models' / directory / 'model.bin').exists():
                     raise RuntimeError('Speech model is missing. Run launchers/macos/Install Dictately.command or scripts/desktop/install-desktop.sh again')
                 self.hooks = start_hotkey(lambda:self.events.put('toggle'),lambda:self.events.put('cancel'))
-            self.timer = QTimer(); self.timer.timeout.connect(self.tick); self.timer.start(40)
+            self.timer = QTimer(); self.timer.timeout.connect(self.tick); self.timer.start(1000)
         def language(self, code):
             self.settings['language']=code; write_json(data / 'desktop-settings.json',self.settings)
         def notice(self, text):
@@ -262,6 +273,7 @@ def run_desktop(smoke=False, probe=None):
             self.session += 1; self.request=0; self.buffer=PhraseBuffer(); self.transcript=''; self.last_injected=''
             self.blocked=False; self.session_settings=dict(self.settings)
             self.started=time.monotonic(); self.last_voice=self.started; self.last_request=0.; self.starting=True
+            self.timer.setInterval(40)
             self.window.position=self.settings.get('overlay_position','bottom_center')
             self.window.open()
             token=self.session
@@ -357,6 +369,8 @@ def run_desktop(smoke=False, probe=None):
                     token=self.session
                     self.future=self.pool.submit(lambda req=request,session=token:(session,self.speech.recognize(session,req)))
                     self.future.speech=True
+            interval=40 if self.recording or self.starting or self.finishing or self.mic_closing or self.future else 1000
+            if self.timer.interval()!=interval:self.timer.setInterval(interval)
         def save_history(self):
             if self.transcript:
                 self.history.insert(0,{'at':datetime.now().isoformat(timespec='seconds'),'language':self.session_settings['language'],'text':self.transcript})

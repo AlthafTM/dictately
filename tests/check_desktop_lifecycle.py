@@ -35,6 +35,7 @@ def main():
             return {'type':'result','cleaned':'Synthetic phrase' if not request['final'] else 'tail', 'consumed':len(request['samples'])}
     def probe(controller,app):
         controller.input=Input()
+        assert controller.timer.interval()==1000,'Idle controller should not poll at audio cadence'
         controller.show_preferences()
         def check_open():
             try:
@@ -50,6 +51,7 @@ def main():
         def finish():
             try:
                 assert not controller.finishing,'finalization did not complete'
+                assert controller.timer.interval()==1000
                 assert results==['Synthetic phrase',' tail'],results
                 assert controller.history[0]['text']=='Synthetic phrase tail',controller.history
                 print('Asynchronous open, animation, live paste, microphone tail and final history passed')
@@ -68,6 +70,7 @@ def main():
                 assert controller.settings['overlay_position']=='top_right'
                 controller.toggle()
                 assert controller.window.position=='top_right'
+                assert controller.timer.interval()==40
                 QTimer.singleShot(80,check_open)
                 QTimer.singleShot(650,stop)
                 QTimer.singleShot(1200,finish)

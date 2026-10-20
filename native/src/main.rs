@@ -141,6 +141,7 @@ impl App {
             picker:false,picker_pending:false,picker_voice:now,picker_has_voice:false,settings_checked:now,frame_clock:false };
         app.apply_hotkeys();
         app.display.position=app.settings.overlay_position.clone();
+        app.display.prewarm_picker();
         app.update_tip(); app
     }
     unsafe fn update_tip(&mut self) {

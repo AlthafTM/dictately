@@ -1,5 +1,7 @@
 # Development and testing
 
+See the [0.10 performance review](PERFORMANCE-REVIEW.md) for picker startup/transition measurements, renderer cache costs, encoder reuse, idle signaling, and setup streaming changes.
+
 ## Experimental macOS / Linux frontend
 
 See [platform setup and current limits](MACOS-LINUX.md). The `desktop.yml` workflow runs shared/desktop unit tests, shell validation, Qt waveform/launcher smoke tests, and real Small-model synthetic speech on native Linux, Apple Silicon, and Intel Mac runners. Linux additionally verifies F12, paste into its own synthetic editor, and rejection after switching windows under Xvfb/Openbox. No real microphone or macOS permission grants are automated. Windows keeps its Rust controller and existing installer.

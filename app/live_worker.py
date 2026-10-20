@@ -22,7 +22,7 @@ if sys.stdin is not None:
     sys.stdin.reconfigure(encoding="utf-8")
 from speech_models import selected_model
 from worker_protocol import read_request
-from language_commands import BilingualBackend, language_command
+from language_commands import BilingualBackend, language_command, shared_encoder
 
 os.environ["HF_HUB_OFFLINE"] = "1"
 os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
@@ -172,18 +172,19 @@ class Worker:
             # Recognition supplies punctuation. Never warm a separate rewriting model.
             self.prepare()
             return {"type": "ready", "id": request.get("id", 0), "device": self.device, "model":self.model_name}
-        self.prepare()
         audio = np.array(request["samples"], dtype=np.float32, copy=True)
         audio *= 1.0 / 32768.0
         if request['command']=='select_language':
-            if len(audio)<6400 or float(np.sqrt(np.mean(audio*audio)))<.001:
+            if len(audio)<6400 or float(np.sqrt(np.dot(audio,audio)/len(audio)))<.001:
                 return {'type':'language_selected','id':request.get('id',0),'language':None,'consumed':len(audio)}
+            self.prepare()
             choices=[]
-            for language in ('en','id'):
-                segments,_=self.engine.whisper.transcribe(audio,language=language,beam_size=3,
-                    temperature=0.0,condition_on_previous_text=False,vad_filter=True)
-                choice=language_command(' '.join(segment.text for segment in segments))
-                if choice:choices.append(choice)
+            with shared_encoder(self.engine.whisper):
+                for language in ('en','id'):
+                    segments,_=self.engine.whisper.transcribe(audio,language=language,beam_size=3,
+                        temperature=0.0,condition_on_previous_text=False,vad_filter=True)
+                    choice=language_command(' '.join(segment.text for segment in segments))
+                    if choice:choices.append(choice)
             # A spoken "both" wins, otherwise conflicting decodes require a retry.
             selected='both' if 'both' in choices else choices[0] if choices and len(set(choices))==1 else None
             return {'type':'language_selected','id':request.get('id',0),'language':selected,'consumed':len(audio)}
@@ -191,6 +192,7 @@ class Worker:
         if len(audio) < 3200 or float(np.sqrt(np.dot(audio, audio) / len(audio))) < .0005:
             return {"type": "result", "id": request["id"], "raw": "", "cleaned": "", "preview": "",
                 "consumed": len(audio) if final else max(0, len(audio)-4800), "language": locked_language(request.get("language")), "seconds": 0}
+        self.prepare()
         model = self.engine.whisper
         selected = locked_language(request.get("language"))
         vocabulary = str(request.get("vocabulary") or "")[:600].strip()

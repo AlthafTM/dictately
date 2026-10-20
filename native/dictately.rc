@@ -1,7 +1,7 @@
 1 ICON "../assets/dictately.ico"
 1 VERSIONINFO
-FILEVERSION 0,9,0,0
-PRODUCTVERSION 0,9,0,0
+FILEVERSION 0,10,0,0
+PRODUCTVERSION 0,10,0,0
 FILEOS 0x40004
 FILETYPE 0x1
 BEGIN
@@ -11,8 +11,8 @@ BEGIN
         BEGIN
             VALUE "FileDescription", "Dictately"
             VALUE "ProductName", "Dictately"
-            VALUE "FileVersion", "0.9.0"
-            VALUE "ProductVersion", "0.9.0"
+            VALUE "FileVersion", "0.10.0"
+            VALUE "ProductVersion", "0.10.0"
             VALUE "OriginalFilename", "Dictately.exe"
         END
     END

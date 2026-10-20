@@ -25,7 +25,7 @@ pub fn might_correct(recent: &str, next: &str) -> bool {
     after.len()>=2 && before.iter().enumerate().skip(before.len().saturating_sub(40)).any(|(i,_)|
         before.get(i+1).is_some() && before[i].1==after[0].1 && before[i+1].1==after[1].1)
 }
-fn distance(a: &[String], b: &[String]) -> usize {
+fn distance(a: &[&str], b: &[&str]) -> usize {
     let mut row: Vec<usize>=(0..=b.len()).collect();
     for (i,left) in a.iter().enumerate() {
         let mut diagonal=row[0]; row[0]=i+1;
@@ -44,10 +44,11 @@ pub fn plan(recent: &str, next: &str) -> Option<Correction> {
         return Some(Correction {start:before.last()?.0,replacement:format!("{} ",body.trim())});
     }
     if after.len()<4 && !explicit { return None; }
-    let after_words:Vec<_>=after.iter().map(|(_,w)|w.clone()).collect();
+    let after_words:Vec<_>=after.iter().map(|(_,w)|w.as_str()).collect();
+    let before_words:Vec<_>=before.iter().map(|(_,w)|w.as_str()).collect();
     let mut best:Option<(usize,usize)>=None;
     for i in before.len().saturating_sub(after.len()+2)..before.len() {
-        let source:Vec<_>=before[i..].iter().map(|(_,w)|w.clone()).collect();
+        let source=&before_words[i..];
         if source.len().abs_diff(after.len())>2 || source.len()<3 { continue; }
         let edits=distance(&source,&after_words);
         if edits==0 { continue; } // Ordinary intentional repetition is preserved.

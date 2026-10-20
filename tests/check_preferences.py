@@ -5,6 +5,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 import settings_window as ui
+from unittest.mock import patch
 
 
 def main():
@@ -36,6 +37,10 @@ def main():
             window.refresh_microphones('')
             window.overlay_position.set('Bottom center');window.save_preferences()
             assert ui.read(ui.DATA/'settings.json',{})['microphone']==''
+            ui.write(ui.DATA/'history.json',[{'at':'2026-10-20','cleaned':'history update','raw':'history update'}])
+            window.poll();assert window.rows[0]['cleaned']=='history update'
+            with patch.object(ui,'read',side_effect=AssertionError('Unchanged history was reparsed')):
+                window.poll()
             print('Preference controls, device enumeration, persistence, unavailable device and system-default reset passed; no capture opened')
         finally:
             window.root.destroy()

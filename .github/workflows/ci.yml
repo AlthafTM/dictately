@@ -15,7 +15,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install CPU dependencies
-        run: python -m pip install -r requirements/base.txt
+        run: python -m pip install -r requirements/dev.txt
       - name: Native unit tests
         run: cargo test --manifest-path native/Cargo.toml --release --locked
       - name: Shared, speech-worker and repository tests (no model downloads)
@@ -27,3 +27,17 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Copy-Item native/target/release/dictately.exe Dictately.exe
           python tests/check_preferences.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python tests/check_picker_latency.py --messages
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Native dictation and language controls with synthetic speech
+        shell: pwsh
+        run: |
+          python app/select_model.py small
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./tests/make_audio_fixtures.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python tests/check_native.py --quick
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python tests/check_language_picker.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

@@ -23,6 +23,8 @@ Dictately is a **local live dictation tool** that turns **English** or **Indones
 
 See the [strengths, weaknesses, and Wispr Flow comparison report](docs/WISPR-FLOW-COMPARISON.md) for current tradeoffs, measured optimizations, and suggested next work.
 
+The [0.10 performance review](docs/PERFORMANCE-REVIEW.md) covers language-picker latency, renderer caching, command recognition, idle work, setup improvements, and measured tradeoffs.
+
 ## Features
 
 - **English**, **Indonesian**, or **Both**: use the Windows language picker by voice or mouse; fixed modes stay locked, and Both limits automatic selection to English/Indonesian
