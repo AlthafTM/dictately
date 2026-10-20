@@ -30,7 +30,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python tests/check_picker_latency.py --messages
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Native dictation and language controls with synthetic speech
+      - name: Prepare cloud speech fixtures and model
+        timeout-minutes: 5
         shell: pwsh
         run: |
           python -m venv --system-site-packages .venv
@@ -39,7 +40,15 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           powershell.exe -NoProfile -File ./tests/make_audio_fixtures.ps1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Native dictation into an owned editor
+        timeout-minutes: 3
+        shell: pwsh
+        run: |
           python tests/check_native.py --quick
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Native language picker, voice and shortcuts
+        timeout-minutes: 3
+        shell: pwsh
+        run: |
           python tests/check_language_picker.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

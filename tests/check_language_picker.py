@@ -29,6 +29,7 @@ user.keybd_event.argtypes=[w.BYTE,w.BYTE,w.DWORD,c.c_size_t]
 user.GetForegroundWindow.restype=w.HWND
 kernel.CreateEventW.argtypes=[c.c_void_p,w.BOOL,w.BOOL,w.LPCWSTR];kernel.CreateEventW.restype=w.HANDLE
 kernel.CloseHandle.argtypes=[w.HANDLE]
+passthrough_f10=0
 
 
 def read(path):
@@ -47,8 +48,17 @@ def wait(predicate,seconds=30):
 
 
 def pump():
+    global passthrough_f10
     message=w.MSG()
-    while user.PeekMessageW(c.byref(message),None,0,0,1):user.TranslateMessage(c.byref(message));user.DispatchMessageW(c.byref(message))
+    while user.PeekMessageW(c.byref(message),None,0,0,1):
+        # During shortcut capture F10 intentionally reaches this fixture. A
+        # stock top-level EDIT would enter Windows' modal system-menu loop,
+        # preventing the Python wait deadline from running. Count delivery
+        # without dispatching that menu action; real hotkeys are still tested.
+        if message.message in (0x100,0x101,0x104,0x105) and message.wParam==121:
+            passthrough_f10+=1;continue
+        if message.message==0x112 and message.wParam&0xfff0==0xf100:continue
+        user.TranslateMessage(c.byref(message));user.DispatchMessageW(c.byref(message))
 
 
 def chord(value):
@@ -88,7 +98,10 @@ def main():
                     # shortcuts must reach the dialog instead of toggling the app.
                     capture=kernel.CreateEventW(None,True,True,CAPTURE_EVENT)
                     try:
+                        delivered=passthrough_f10
                         chord(121);time.sleep(.15);pump();assert not status().get('language_picker')
+                        assert passthrough_f10>delivered,'Shortcut capture did not receive F10'
+                        print('F10 shortcut-capture passthrough passed',flush=True)
                     finally:kernel.CloseHandle(capture)
                     chord(121);wait(lambda:status().get('language_picker'))
                     # Hit targets move with the entry animation; click only once
