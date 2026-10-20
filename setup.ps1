@@ -28,5 +28,11 @@ $shortcut.TargetPath = $executable
 $shortcut.WorkingDirectory = $PSScriptRoot
 $shortcut.IconLocation = "$PSScriptRoot\assets\transcribr.ico"
 $shortcut.Save()
+$settingsShortcut = $shell.CreateShortcut((Join-Path ([Environment]::GetFolderPath('Programs')) 'Transcribr Settings.lnk'))
+$settingsShortcut.TargetPath = $executable
+$settingsShortcut.Arguments = '--settings'
+$settingsShortcut.WorkingDirectory = $PSScriptRoot
+$settingsShortcut.IconLocation = "$PSScriptRoot\assets\transcribr.ico"
+$settingsShortcut.Save()
 if ($StartWithWindows) { Start-Process -FilePath $executable -ArgumentList '--enable-startup' -WindowStyle Hidden -Wait }
-Write-Host 'Transcribr is ready. Open Start Transcribr.vbs or the Start menu shortcut, click a text box, then press F12.'
+Write-Host 'Transcribr is ready. F12 toggles dictation and F11 opens the language picker by default. Use Transcribr Settings or the tray menu to change shortcuts.'

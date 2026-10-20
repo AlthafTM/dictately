@@ -23,6 +23,9 @@ pub struct Display {
     logical_height:i32,
     labels:Vec<Vec<u8>>,
     options:Vec<Vec<(usize,f32,f32)>>,
+    rail:Vec<(usize,f32,f32)>,
+    selected_position:f32,
+    hover_levels:[f32;3],
     visible: bool,
     closing: bool,
     animation: Instant,
@@ -68,20 +71,23 @@ fn over(destination: u32, shade: f32, alpha: f32) -> u32 {
     c|c<<8|c<<16|((a*255.).round().clamp(0.,255.) as u32)<<24
 }
 // Position follows the capsule perimeter, rather than sliding across its fill.
-fn perimeter(x: f32,y: f32,hw: f32,r: f32) -> f32 {
-    let side=(hw-r).max(0.); let straight=2.*side; let pi=std::f32::consts::PI;
-    let distance=if x>side { straight+(y.atan2(x-side)+pi/2.)*r }
-        else if x < -side { let mut angle=y.atan2(x+side); if angle<0. { angle+=2.*pi; }
-            2.*straight+pi*r+(angle-pi/2.)*r }
-        else if y<0. { x+side } else { straight+pi*r+side-x };
-    distance/(2.*straight+2.*pi*r).max(1.)
+fn perimeter(x:f32,y:f32,hw:f32,hh:f32,r:f32)->f32 {
+    let sx=(hw-r).max(0.);let sy=(hh-r).max(0.);let pi=std::f32::consts::PI;
+    let distance=if x>sx && y < -sy {2.*sx+((y+sy).atan2(x-sx)+pi/2.)*r}
+        else if x>sx && y>sy {2.*sx+pi*r/2.+2.*sy+(y-sy).atan2(x-sx)*r}
+        else if x>sx {2.*sx+pi*r/2.+y+sy}
+        else if x < -sx && y>sy {4.*sx+pi*r+2.*sy+((y-sy).atan2(x+sx)-pi/2.)*r}
+        else if x < -sx && y < -sy {4.*sx+1.5*pi*r+4.*sy+((y+sy).atan2(x+sx)+pi)*r}
+        else if x < -sx {4.*sx+1.5*pi*r+2.*sy+sy-y}
+        else if y<0. {x+sx}else{2.*sx+pi*r+2.*sy+sx-x};
+    distance/(4.*sx+4.*sy+2.*pi*r).max(1.)
 }
 fn edge_strength(distance: f32) -> f32 {
     let rim=(-(distance/0.65).powi(2)).exp()*112.;
     let inside=if distance<0. { (distance/1.25).exp()*18. } else { 0. };
     rim+inside
 }
-unsafe fn text_mask(text:&str,width:i32,height:i32,font_size:i32)->Vec<u8> {
+unsafe fn text_mask(text:&str,width:i32,height:i32,font_size:i32,center:bool)->Vec<u8> {
     let screen=GetDC(std::ptr::null_mut());let dc=CreateCompatibleDC(screen);ReleaseDC(std::ptr::null_mut(),screen);
     let mut info:BITMAPINFO=zeroed();info.bmiHeader.biSize=std::mem::size_of::<BITMAPINFOHEADER>() as u32;
     info.bmiHeader.biWidth=width;info.bmiHeader.biHeight=-height;info.bmiHeader.biPlanes=1;info.bmiHeader.biBitCount=32;
@@ -91,7 +97,7 @@ unsafe fn text_mask(text:&str,width:i32,height:i32,font_size:i32)->Vec<u8> {
     let font=CreateFontW(-font_size,0,0,0,400,0,0,0,DEFAULT_CHARSET as u32,0,0,ANTIALIASED_QUALITY as u32,0,wide("Segoe UI").as_ptr());
     let old_font=SelectObject(dc,font);SetBkMode(dc,TRANSPARENT as i32);SetTextColor(dc,0xffffff);
     let mut rect=RECT{left:0,top:0,right:width,bottom:height};let label=wide(text);
-    DrawTextW(dc,label.as_ptr(),label.len() as i32-1,&mut rect,DT_CENTER|DT_VCENTER|DT_SINGLELINE);
+    DrawTextW(dc,label.as_ptr(),label.len() as i32-1,&mut rect,(if center {DT_CENTER}else{DT_LEFT})|DT_VCENTER|DT_SINGLELINE);
     GdiFlush();let result=pixels.iter().map(|pixel|(pixel&255) as u8).collect();
     SelectObject(dc,old_font);DeleteObject(font);SelectObject(dc,old);DeleteObject(bitmap);DeleteDC(dc);result
 }
@@ -103,6 +109,7 @@ impl Display {
             language:"EN".into(),wave:VecDeque::from(vec![0.;20]),visible:false,closing:false,animation:now,cue_at:now,
             end_started:None,origin:(0,0),dpi:0,width:0,height:0,rw:0,rh:0,sample_scale:2.,dc,
             picker:false,selected:0,hovered:None,logical_width:WIDTH,logical_height:HEIGHT,labels:Vec::new(),options:Vec::new(),
+            rail:Vec::new(),selected_position:0.,hover_levels:[0.;3],
             bitmap:std::ptr::null_mut(),old_bitmap:std::ptr::null_mut(),pixels:std::ptr::null_mut(),frame:Vec::new(),
             background:Vec::new(),body_shades:Vec::new(),rim_shades:Vec::new(),edges:Vec::new(),shine:[0.;PROFILE],
             levels:[0.;20],last_frame:now,preview_path:std::env::var_os("LOCALFLOW_PREVIEW_DIR")
@@ -132,31 +139,41 @@ impl Display {
         self.frame=vec![0;count]; self.background=vec![0;count]; self.body_shades=vec![0.;count];
         self.rim_shades=vec![0.;count]; self.edges.clear();
         let hw=self.logical_width as f32/2.-1.; let hh=self.logical_height as f32/2.-1.;
+        let radius=if self.picker {28.}else{hh};
         for y in 0..self.rh { for x in 0..self.rw {
             let px=(x as f32+0.5)/self.sample_scale; let py=(y as f32+0.5)/self.sample_scale;
             let nx=(px/self.logical_width as f32-0.5)*2.; let ny=py/self.logical_height as f32;
-            let distance=capsule_distance(px-self.logical_width as f32/2.,py-self.logical_height as f32/2.,hw,hh,hh);
+            let distance=capsule_distance(px-self.logical_width as f32/2.,py-self.logical_height as f32/2.,hw,hh,radius);
             let sheen=(-((nx+0.4)/0.9).powi(2)-((ny-0.1)/0.29).powi(2)).exp();
             let lower=(-((nx-0.65)/0.75).powi(2)-((ny-0.91)/0.2).powi(2)).exp();
             let base=16.+(1.-ny)*9.+sheen*28.+lower*12.; let highlight=93.+(1.-ny)*92.;
             let index=(y*self.rw+x) as usize;
             self.body_shades[index]=base; self.rim_shades[index]=highlight;
             self.background[index]=self.body_pixel(index,distance);
-            if distance.abs()<4.5 { self.edges.push(Edge { index,position:perimeter(px-self.logical_width as f32/2.,py-self.logical_height as f32/2.,hw,hh),strength:edge_strength(distance) }); }
+            if distance.abs()<4.5 { self.edges.push(Edge { index,position:perimeter(px-self.logical_width as f32/2.,py-self.logical_height as f32/2.,hw,hh,radius),strength:edge_strength(distance) }); }
         } }
         self.write_dimensions();
         self.labels.clear();
         self.options.clear();
+        self.rail.clear();
         if self.picker {
-            for text in ["Language","English","Indonesia","Both"] {self.labels.push(text_mask(text,(110.*self.sample_scale) as i32,(22.*self.sample_scale) as i32,(12.*self.sample_scale) as i32));}
+            for (index,text) in ["Language","English","Indonesia","Both"].iter().enumerate() {self.labels.push(text_mask(text,(112.*self.sample_scale) as i32,(22.*self.sample_scale) as i32,(12.*self.sample_scale) as i32,index>0));}
+            for y in (51.*self.sample_scale) as i32..(97.*self.sample_scale) as i32 {
+                for x in (15.*self.sample_scale) as i32..(365.*self.sample_scale) as i32 {
+                    let px=(x as f32+0.5)/self.sample_scale;let py=(y as f32+0.5)/self.sample_scale;
+                    let d=capsule_distance(px-190.,py-74.,174.,22.,22.);
+                    let mask=(0.5-d*self.sample_scale).clamp(0.,1.);
+                    if mask>0. {let rim=(1.-d.abs()).clamp(0.,1.);self.rail.push(((y*self.rw+x) as usize,mask,19.+rim*31.));}
+                }
+            }
             for option in 0..3 {
-                let mut pixels=Vec::new();let left=18.+117.*option as f32;
-                for y in (45.*self.sample_scale) as i32..(85.*self.sample_scale) as i32 {
-                    for x in ((left-1.)*self.sample_scale) as i32..((left+111.)*self.sample_scale) as i32 {
+                let mut pixels=Vec::new();let left=20.+114.*option as f32;
+                for y in (55.*self.sample_scale) as i32..(93.*self.sample_scale) as i32 {
+                    for x in ((left-1.)*self.sample_scale) as i32..((left+113.)*self.sample_scale) as i32 {
                         let px=(x as f32+0.5)/self.sample_scale;let py=(y as f32+0.5)/self.sample_scale;
-                        let distance=capsule_distance(px-(left+55.),py-65.,55.,19.,10.);
+                        let distance=capsule_distance(px-(left+56.),py-74.,56.,18.,18.);
                         let mask=(0.5-distance*self.sample_scale).clamp(0.,1.);
-                        if mask>0. {pixels.push(((y*self.rw+x) as usize,mask,(1.-(py-46.)/38.).clamp(0.,1.)));}
+                        if mask>0. {pixels.push(((y*self.rw+x) as usize,mask,(1.-(py-56.)/36.).clamp(0.,1.)));}
                     }
                 }
                 self.options.push(pixels);
@@ -164,30 +181,46 @@ impl Display {
         }
     }
     pub unsafe fn set_picker(&mut self,picker:bool) {
+        self.hovered=None;self.hover_levels.fill(0.);
         if self.picker==picker {return;}
         self.picker=picker;self.hovered=None;
-        self.logical_width=if picker {380}else{WIDTH};self.logical_height=if picker {104}else{HEIGHT};
+        self.logical_width=if picker {380}else{WIDTH};self.logical_height=if picker {112}else{HEIGHT};
         self.dpi=0;self.configure(GetDpiForWindow(self.hwnd).max(96));
     }
     pub fn option_at(&self,x:i32,y:i32)->Option<usize> {
         if !self.picker || self.closing {return None;}
         let x=x as f32*96./self.dpi as f32;let y=y as f32*96./self.dpi as f32;
-        (0..3).find(|i| {let left=18.+*i as f32*117.;x>=left&&x<=left+110.&&y>=46.&&y<=84.})
+        (0..3).find(|i| {let left=20.+*i as f32*114.;x>=left&&x<=left+112.&&y>=56.&&y<=92.})
     }
-    fn render_options(&mut self,age:f32) {
+    fn render_options(&mut self,age:f32,dt:f32) {
+        let settle=1.-(-dt/0.065).exp();
+        self.selected_position+=(self.selected as f32-self.selected_position)*settle;
+        for option in 0..3 {self.hover_levels[option]+=((if self.hovered==Some(option) {1.}else{0.})-self.hover_levels[option])*settle;}
+        for &(index,mask,shade) in &self.rail {
+            let alpha=(self.frame[index]>>24) as f32/255.;self.frame[index]=over(self.frame[index],shade,mask*alpha);
+        }
         for (option,pixels) in self.options.iter().enumerate() {
             for &(index,mask,vertical) in pixels {
                 let alpha=(self.frame[index]>>24) as f32/255.;if alpha==0. {continue;}
-                let shade=if self.selected==option {215.+vertical*24.} else if self.hovered==Some(option) {65.} else {43.};
-                self.frame[index]=over(self.frame[index],shade,mask*alpha);
+                let _=vertical;
+                self.frame[index]=over(self.frame[index],75.,mask*alpha*self.hover_levels[option]*0.32);
             }
         }
-        let w=(110.*self.sample_scale) as i32;let h=(22.*self.sample_scale) as i32;
+        let left=20.+114.*self.selected_position;
+        for y in (55.*self.sample_scale) as i32..(93.*self.sample_scale) as i32 {for x in ((left-1.)*self.sample_scale) as i32..((left+113.)*self.sample_scale) as i32 {
+            let px=(x as f32+0.5)/self.sample_scale;let py=(y as f32+0.5)/self.sample_scale;
+            let d=capsule_distance(px-(left+56.),py-74.,56.,18.,18.);
+            let mask=(0.5-d*self.sample_scale).clamp(0.,1.);let index=(y*self.rw+x) as usize;
+            let alpha=(self.frame[index]>>24) as f32/255.;let shine=(1.-(py-56.)/36.).clamp(0.,1.);
+            self.frame[index]=over(self.frame[index],204.+shine*35.,mask*alpha);
+        }}
+        let w=(112.*self.sample_scale) as i32;let h=(22.*self.sample_scale) as i32;
         for label in 0..4 {
-            let left=if label==0 {12.}else{18.+117.*(label-1) as f32};
-            let top=if label==0 {15.}else{54.};
+            let left=if label==0 {24.}else{20.+114.*(label-1) as f32};
+            let top=if label==0 {15.}else{63.};
             let ox=(left*self.sample_scale).round() as i32;let oy=(top*self.sample_scale).round() as i32;
-            let shade=if label>0 && self.selected==label-1 {22.} else {235.};
+            let proximity=if label==0 {0.}else{(1.-(self.selected_position-(label-1) as f32).abs()).clamp(0.,1.)};
+            let shade=220.*(1.-proximity)+22.*proximity;
             for y in 0..h {for x in 0..w {
                 let px=ox+x;let py=oy+y;if px<0 || px>=self.rw || py<0 || py>=self.rh {continue;}
                 let index=(py*self.rw+px) as usize;let body=(self.frame[index]>>24) as f32/255.;
@@ -232,7 +265,7 @@ impl Display {
         if !self.visible { SetWindowPos(self.hwnd,std::ptr::null_mut(),work.left+(work.right-work.left)/2,work.bottom-80,0,0,SWP_NOSIZE|SWP_NOZORDER|SWP_NOACTIVATE); }
         self.configure(GetDpiForWindow(self.hwnd).max(96));
         self.origin=(work.left+(work.right-work.left-self.width)/2,work.bottom-self.height-(22.*self.dpi as f32/96.).round() as i32);
-        if !self.visible||self.closing { self.animation=Instant::now();self.last_frame=Instant::now();self.visible=true;self.closing=false; }
+        if !self.visible||self.closing { self.animation=Instant::now();self.last_frame=Instant::now();self.visible=true;self.closing=false;self.selected_position=self.selected as f32; }
         self.animate();
     }
     pub unsafe fn redraw(&self) {}
@@ -247,7 +280,7 @@ impl Display {
         let cue_age=self.cue_at.elapsed().as_secs_f32();
         let phase=(cue_age*0.36).fract();
         let profile=|position:f32| { let d=position-phase; let d=if d<0. {d+1.}else{d};self.shine[((d*PROFILE as f32) as usize).min(PROFILE-1)] };
-        let hw=15.+(self.logical_width as f32/2.-16.)*progress;let hh=self.logical_height as f32/2.-1.;let radius=hw.min(hh);
+        let hw=15.+(self.logical_width as f32/2.-16.)*progress;let hh=self.logical_height as f32/2.-1.;let radius=hw.min(if self.picker {28.}else{hh});
         if progress<0.999 {
             for y in 0..self.rh { for x in 0..self.rw {
                 let px=(x as f32+0.5)/self.sample_scale-self.logical_width as f32/2.;let py=(y as f32+0.5)/self.sample_scale-self.logical_height as f32/2.;
@@ -255,7 +288,7 @@ impl Display {
                 let mut pixel=self.body_pixel(index,distance);
                 if distance.abs()<4.5 && pixel>>24>0 {
                     let alpha=(pixel>>24) as f32/255.;let shade=(pixel&255) as f32/alpha;
-                    pixel=premultiplied(shade+profile(perimeter(px,py,hw,radius))*edge_strength(distance),alpha);
+                    pixel=premultiplied(shade+profile(perimeter(px,py,hw,hh,radius))*edge_strength(distance),alpha);
                 }
                 self.frame[index]=pixel;
             } }
@@ -272,7 +305,7 @@ impl Display {
         // across the handoff instead of switching between max(intro, microphone).
         let handoff=smooth((cue_age-0.12)/0.85);
         let settle=1.-(-dt/0.085).exp();
-        if self.picker {self.render_options(cue_age);} else {
+        if self.picker {self.render_options(cue_age,dt);} else {
         for i in 0..20 {
             let center_distance=((i as f32-9.5)/9.5).abs();let reveal=smooth((progress-center_distance*0.42)/0.58);
             let ripple=(cue_age*6.-center_distance*3.).sin()*0.5+0.5;

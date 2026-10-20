@@ -113,6 +113,9 @@ def main():
         desktop = json.loads(result.stdout)
         assert desktop["sessions"][0]["reference_word_recall"] == 1.0
         results["installed_native_dictation"] = True
+        print('Checking packaged F11 picker, mouse, voice and custom shortcuts',flush=True)
+        run([sys.executable,ROOT/'tests/check_language_picker.py','--app-dir',INSTALL],cwd=ROOT)
+        results['installed_language_picker']=True
         (INSTALL / "keep-me.txt").write_text("User-added file; preserve on uninstall")
         print("Checking uninstall and user-file preservation", flush=True)
         run([INSTALL / "Uninstall Transcribr.exe", "--silent"])

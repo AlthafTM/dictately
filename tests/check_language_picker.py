@@ -90,7 +90,7 @@ def main():
                     chord(122);wait(lambda:status().get('language_picker'))
                     bounds=w.RECT();user.GetClientRect(hwnd,c.byref(bounds))
                     # Mouse-select Both; no voice text should have been delivered.
-                    x=int(307*bounds.right/380);y=int(65*bounds.bottom/104)
+                    x=int(304*bounds.right/380);y=int(74*bounds.bottom/112)
                     user.PostMessageW(hwnd,0x202,0,(y<<16)|x)
                     wait(lambda:not status().get('language_picker') and status().get('language')=='both')
                     results['mouse_selection']=True

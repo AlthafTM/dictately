@@ -83,6 +83,7 @@ impl App {
         self.mic_starting=self.test_samples.is_none();self.capture=None;
         if self.mic_starting {self.microphone.start(self.session,Duration::ZERO);}
         self.display.set_picker(true);
+        self.display.wave.iter_mut().for_each(|value|*value=0.);
         self.display.selected=match self.settings.language.as_str() {"id"=>1,"both"=>2,_=>0};
         self.display.recording=true;self.display.cue("");self.display.show("","");
         self.inflight=true;self.worker_loaded=true;
@@ -90,13 +91,17 @@ impl App {
         SetTimer(self.display.hwnd,1,16,None);self.timer_interval=16;self.update_tip();self.status("language_picker");
     }
     unsafe fn close_picker(&mut self) {
+        self.close_picker_delayed(false);
+    }
+    unsafe fn close_picker_delayed(&mut self,selected:bool) {
         if !self.picker {return;}
         if self.test_samples.is_none() {self.microphone.stop(self.session);}
         self.session+=1;self.input.invalidate(self.session);
         self.capture=None;self.recording=false;self.picker=false;self.picker_pending=false;
         self.mic_starting=false;self.mic_stopping=false;self.finishing=false;self.inflight=false;
         self.buffer.clear();self.pending.clear();RECORDING.store(false,Ordering::Relaxed);
-        self.display.recording=false;self.display.cue("");self.display.hide();self.hide_at=None;
+        self.display.recording=false;self.display.cue("");
+        if selected {self.hide_at=Some(Instant::now()+Duration::from_millis(180));} else {self.display.hide();self.hide_at=None;}
         self.update_tip();self.status("ready");
     }
     unsafe fn choose_language(&mut self,language:&str) {
@@ -107,7 +112,7 @@ impl App {
             self.log("Could not save language selection");return;
         }
         self.display.selected=match language {"id"=>1,"both"=>2,_=>0};
-        if self.picker {self.close_picker();} else {self.update_tip();self.status("ready");}
+        if self.picker {self.close_picker_delayed(true);} else {self.update_tip();self.status("ready");}
     }
     unsafe fn new(root: PathBuf, data: PathBuf, hwnd: HWND, test_samples: Option<Vec<i16>>) -> Self {
         let (requests, responses) = worker::start(root.clone(), data.clone());
@@ -243,6 +248,10 @@ impl App {
                             self.status("recording");
                         }
                         Err(error) => {
+                            if self.picker {
+                                self.log(&format!("Picker voice unavailable; mouse selection remains active: {error}"));
+                                self.display.recording=false;self.status("language_picker");continue;
+                            }
                             self.stop(true);
                             self.notice("Check your microphone", &error, 8);
                             self.status("error");
