@@ -33,9 +33,11 @@ jobs:
       - name: Native dictation and language controls with synthetic speech
         shell: pwsh
         run: |
+          python -m venv --system-site-packages .venv
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python app/select_model.py small
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          ./tests/make_audio_fixtures.ps1
+          powershell.exe -NoProfile -File ./tests/make_audio_fixtures.ps1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python tests/check_native.py --quick
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
