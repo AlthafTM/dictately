@@ -95,6 +95,9 @@ def main():
         words=result['cleaned'].lower()
         assert 'report' in words and 'tomorrow' in words,result
         assert result['language']=='en'
+        result=worker.process({'command':'recognize','id':2,'samples':samples,'language':'both','final':True})
+        assert result['language'] in ('en','id')
+        assert 'report' in result['cleaned'].lower() and 'tomorrow' in result['cleaned'].lower(),result
         print('Real local CPU model load and synthetic speech decode passed')
 
 

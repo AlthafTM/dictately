@@ -16,6 +16,13 @@ pub struct Display {
     pub recording: bool,
     pub language: String,
     pub wave: VecDeque<f32>,
+    picker:bool,
+    pub selected:usize,
+    pub hovered:Option<usize>,
+    logical_width:i32,
+    logical_height:i32,
+    labels:Vec<Vec<u8>>,
+    options:Vec<Vec<(usize,f32,f32)>>,
     visible: bool,
     closing: bool,
     animation: Instant,
@@ -74,6 +81,20 @@ fn edge_strength(distance: f32) -> f32 {
     let inside=if distance<0. { (distance/1.25).exp()*18. } else { 0. };
     rim+inside
 }
+unsafe fn text_mask(text:&str,width:i32,height:i32,font_size:i32)->Vec<u8> {
+    let screen=GetDC(std::ptr::null_mut());let dc=CreateCompatibleDC(screen);ReleaseDC(std::ptr::null_mut(),screen);
+    let mut info:BITMAPINFO=zeroed();info.bmiHeader.biSize=std::mem::size_of::<BITMAPINFOHEADER>() as u32;
+    info.bmiHeader.biWidth=width;info.bmiHeader.biHeight=-height;info.bmiHeader.biPlanes=1;info.bmiHeader.biBitCount=32;
+    let mut bits=std::ptr::null_mut();let bitmap=CreateDIBSection(dc,&info,DIB_RGB_COLORS,&mut bits,std::ptr::null_mut(),0);
+    if bitmap.is_null() {DeleteDC(dc);return vec![0;(width*height) as usize];}
+    let old=SelectObject(dc,bitmap);let pixels=std::slice::from_raw_parts_mut(bits as *mut u32,(width*height) as usize);pixels.fill(0);
+    let font=CreateFontW(-font_size,0,0,0,400,0,0,0,DEFAULT_CHARSET as u32,0,0,ANTIALIASED_QUALITY as u32,0,wide("Segoe UI").as_ptr());
+    let old_font=SelectObject(dc,font);SetBkMode(dc,TRANSPARENT as i32);SetTextColor(dc,0xffffff);
+    let mut rect=RECT{left:0,top:0,right:width,bottom:height};let label=wide(text);
+    DrawTextW(dc,label.as_ptr(),label.len() as i32-1,&mut rect,DT_CENTER|DT_VCENTER|DT_SINGLELINE);
+    GdiFlush();let result=pixels.iter().map(|pixel|(pixel&255) as u8).collect();
+    SelectObject(dc,old_font);DeleteObject(font);SelectObject(dc,old);DeleteObject(bitmap);DeleteDC(dc);result
+}
 impl Display {
     pub unsafe fn new(hwnd: HWND) -> Self {
         let screen=GetDC(std::ptr::null_mut()); let dc=CreateCompatibleDC(screen); ReleaseDC(std::ptr::null_mut(),screen);
@@ -81,6 +102,7 @@ impl Display {
         let mut result=Self { hwnd,title:String::new(),subtitle:String::new(),preview:String::new(),recording:false,
             language:"EN".into(),wave:VecDeque::from(vec![0.;20]),visible:false,closing:false,animation:now,cue_at:now,
             end_started:None,origin:(0,0),dpi:0,width:0,height:0,rw:0,rh:0,sample_scale:2.,dc,
+            picker:false,selected:0,hovered:None,logical_width:WIDTH,logical_height:HEIGHT,labels:Vec::new(),options:Vec::new(),
             bitmap:std::ptr::null_mut(),old_bitmap:std::ptr::null_mut(),pixels:std::ptr::null_mut(),frame:Vec::new(),
             background:Vec::new(),body_shades:Vec::new(),rim_shades:Vec::new(),edges:Vec::new(),shine:[0.;PROFILE],
             levels:[0.;20],last_frame:now,preview_path:std::env::var_os("LOCALFLOW_PREVIEW_DIR")
@@ -95,8 +117,8 @@ impl Display {
     unsafe fn configure(&mut self,dpi:u32) {
         if self.dpi==dpi { return; }
         self.dpi=dpi; let scale=dpi as f32/96.;
-        self.width=(WIDTH as f32*scale).round() as i32; self.height=(HEIGHT as f32*scale).round() as i32;
-        self.rw=self.width*SS; self.rh=self.height*SS; self.sample_scale=self.rw as f32/WIDTH as f32;
+        self.width=(self.logical_width as f32*scale).round() as i32; self.height=(self.logical_height as f32*scale).round() as i32;
+        self.rw=self.width*SS; self.rh=self.height*SS; self.sample_scale=self.rw as f32/self.logical_width as f32;
         if !self.bitmap.is_null() { SelectObject(self.dc,self.old_bitmap); DeleteObject(self.bitmap); }
         let mut info:BITMAPINFO=zeroed(); info.bmiHeader.biSize=std::mem::size_of::<BITMAPINFOHEADER>() as u32;
         info.bmiHeader.biWidth=self.width; info.bmiHeader.biHeight=-self.height;
@@ -109,20 +131,81 @@ impl Display {
         let count=(self.rw*self.rh) as usize;
         self.frame=vec![0;count]; self.background=vec![0;count]; self.body_shades=vec![0.;count];
         self.rim_shades=vec![0.;count]; self.edges.clear();
-        let hw=WIDTH as f32/2.-1.; let hh=HEIGHT as f32/2.-1.;
+        let hw=self.logical_width as f32/2.-1.; let hh=self.logical_height as f32/2.-1.;
         for y in 0..self.rh { for x in 0..self.rw {
             let px=(x as f32+0.5)/self.sample_scale; let py=(y as f32+0.5)/self.sample_scale;
-            let nx=(px/WIDTH as f32-0.5)*2.; let ny=py/HEIGHT as f32;
-            let distance=capsule_distance(px-WIDTH as f32/2.,py-HEIGHT as f32/2.,hw,hh,hh);
+            let nx=(px/self.logical_width as f32-0.5)*2.; let ny=py/self.logical_height as f32;
+            let distance=capsule_distance(px-self.logical_width as f32/2.,py-self.logical_height as f32/2.,hw,hh,hh);
             let sheen=(-((nx+0.4)/0.9).powi(2)-((ny-0.1)/0.29).powi(2)).exp();
             let lower=(-((nx-0.65)/0.75).powi(2)-((ny-0.91)/0.2).powi(2)).exp();
             let base=16.+(1.-ny)*9.+sheen*28.+lower*12.; let highlight=93.+(1.-ny)*92.;
             let index=(y*self.rw+x) as usize;
             self.body_shades[index]=base; self.rim_shades[index]=highlight;
             self.background[index]=self.body_pixel(index,distance);
-            if distance.abs()<4.5 { self.edges.push(Edge { index,position:perimeter(px-WIDTH as f32/2.,py-HEIGHT as f32/2.,hw,hh),strength:edge_strength(distance) }); }
+            if distance.abs()<4.5 { self.edges.push(Edge { index,position:perimeter(px-self.logical_width as f32/2.,py-self.logical_height as f32/2.,hw,hh),strength:edge_strength(distance) }); }
         } }
         self.write_dimensions();
+        self.labels.clear();
+        self.options.clear();
+        if self.picker {
+            for text in ["Language","English","Indonesia","Both"] {self.labels.push(text_mask(text,(110.*self.sample_scale) as i32,(22.*self.sample_scale) as i32,(12.*self.sample_scale) as i32));}
+            for option in 0..3 {
+                let mut pixels=Vec::new();let left=18.+117.*option as f32;
+                for y in (45.*self.sample_scale) as i32..(85.*self.sample_scale) as i32 {
+                    for x in ((left-1.)*self.sample_scale) as i32..((left+111.)*self.sample_scale) as i32 {
+                        let px=(x as f32+0.5)/self.sample_scale;let py=(y as f32+0.5)/self.sample_scale;
+                        let distance=capsule_distance(px-(left+55.),py-65.,55.,19.,10.);
+                        let mask=(0.5-distance*self.sample_scale).clamp(0.,1.);
+                        if mask>0. {pixels.push(((y*self.rw+x) as usize,mask,(1.-(py-46.)/38.).clamp(0.,1.)));}
+                    }
+                }
+                self.options.push(pixels);
+            }
+        }
+    }
+    pub unsafe fn set_picker(&mut self,picker:bool) {
+        if self.picker==picker {return;}
+        self.picker=picker;self.hovered=None;
+        self.logical_width=if picker {380}else{WIDTH};self.logical_height=if picker {104}else{HEIGHT};
+        self.dpi=0;self.configure(GetDpiForWindow(self.hwnd).max(96));
+    }
+    pub fn option_at(&self,x:i32,y:i32)->Option<usize> {
+        if !self.picker || self.closing {return None;}
+        let x=x as f32*96./self.dpi as f32;let y=y as f32*96./self.dpi as f32;
+        (0..3).find(|i| {let left=18.+*i as f32*117.;x>=left&&x<=left+110.&&y>=46.&&y<=84.})
+    }
+    fn render_options(&mut self,age:f32) {
+        for (option,pixels) in self.options.iter().enumerate() {
+            for &(index,mask,vertical) in pixels {
+                let alpha=(self.frame[index]>>24) as f32/255.;if alpha==0. {continue;}
+                let shade=if self.selected==option {215.+vertical*24.} else if self.hovered==Some(option) {65.} else {43.};
+                self.frame[index]=over(self.frame[index],shade,mask*alpha);
+            }
+        }
+        let w=(110.*self.sample_scale) as i32;let h=(22.*self.sample_scale) as i32;
+        for label in 0..4 {
+            let left=if label==0 {12.}else{18.+117.*(label-1) as f32};
+            let top=if label==0 {15.}else{54.};
+            let ox=(left*self.sample_scale).round() as i32;let oy=(top*self.sample_scale).round() as i32;
+            let shade=if label>0 && self.selected==label-1 {22.} else {235.};
+            for y in 0..h {for x in 0..w {
+                let px=ox+x;let py=oy+y;if px<0 || px>=self.rw || py<0 || py>=self.rh {continue;}
+                let index=(py*self.rw+px) as usize;let body=(self.frame[index]>>24) as f32/255.;
+                self.frame[index]=over(self.frame[index],shade,self.labels[label][(y*w+x) as usize] as f32/255.*body);
+            }}
+        }
+        let level=self.wave.back().copied().unwrap_or(0.);
+        for i in 0..5 {
+            let height=4.+(level*15.+2.)*(0.5+0.5*(age*7.+i as f32).sin());let cx=330.+i as f32*5.;
+            for y in ((27.-height/2.-1.)*self.sample_scale) as i32..((27.+height/2.+1.)*self.sample_scale) as i32 {
+                for x in ((cx-2.)*self.sample_scale) as i32..((cx+2.)*self.sample_scale) as i32 {
+                    if x<0||y<0||x>=self.rw||y>=self.rh {continue;}
+                    let d=capsule_distance((x as f32+0.5)/self.sample_scale-cx,(y as f32+0.5)/self.sample_scale-27.,1.1,height/2.,1.1);
+                    let index=(y*self.rw+x) as usize;let alpha=(self.frame[index]>>24) as f32/255.;
+                    self.frame[index]=over(self.frame[index],215.,(0.5-d*self.sample_scale).clamp(0.,1.)*alpha);
+                }
+            }
+        }
     }
     fn body_pixel(&self,index:usize,distance:f32)->u32 {
         let mask=(0.5-distance*self.sample_scale).clamp(0.,1.);
@@ -131,7 +214,7 @@ impl Display {
         premultiplied(shade,(0.82+rim*0.14)*mask)
     }
     fn write_dimensions(&self) {
-        let value=format!("{{\"width\":{},\"height\":{},\"logical_width\":{},\"logical_height\":{},\"supersampling\":2,\"dpi\":{}}}",self.width,self.height,WIDTH,HEIGHT,self.dpi);
+        let value=format!("{{\"width\":{},\"height\":{},\"logical_width\":{},\"logical_height\":{},\"supersampling\":2,\"dpi\":{}}}",self.width,self.height,self.logical_width,self.logical_height,self.dpi);
         if let Some(path)=&self.preview_path { let _=std::fs::write(path.with_extension("json"),&value); }
         if let Some(dir)=&self.frame_dir { let _=std::fs::create_dir_all(dir); let _=std::fs::write(dir.join("dimensions.json"),value); }
     }
@@ -164,10 +247,10 @@ impl Display {
         let cue_age=self.cue_at.elapsed().as_secs_f32();
         let phase=(cue_age*0.36).fract();
         let profile=|position:f32| { let d=position-phase; let d=if d<0. {d+1.}else{d};self.shine[((d*PROFILE as f32) as usize).min(PROFILE-1)] };
-        let hw=15.+(WIDTH as f32/2.-16.)*progress;let hh=HEIGHT as f32/2.-1.;let radius=hw.min(hh);
+        let hw=15.+(self.logical_width as f32/2.-16.)*progress;let hh=self.logical_height as f32/2.-1.;let radius=hw.min(hh);
         if progress<0.999 {
             for y in 0..self.rh { for x in 0..self.rw {
-                let px=(x as f32+0.5)/self.sample_scale-WIDTH as f32/2.;let py=(y as f32+0.5)/self.sample_scale-HEIGHT as f32/2.;
+                let px=(x as f32+0.5)/self.sample_scale-self.logical_width as f32/2.;let py=(y as f32+0.5)/self.sample_scale-self.logical_height as f32/2.;
                 let distance=capsule_distance(px,py,hw,hh,radius);let index=(y*self.rw+x) as usize;
                 let mut pixel=self.body_pixel(index,distance);
                 if distance.abs()<4.5 && pixel>>24>0 {
@@ -189,6 +272,7 @@ impl Display {
         // across the handoff instead of switching between max(intro, microphone).
         let handoff=smooth((cue_age-0.12)/0.85);
         let settle=1.-(-dt/0.085).exp();
+        if self.picker {self.render_options(cue_age);} else {
         for i in 0..20 {
             let center_distance=((i as f32-9.5)/9.5).abs();let reveal=smooth((progress-center_distance*0.42)/0.58);
             let ripple=(cue_age*6.-center_distance*3.).sin()*0.5+0.5;
@@ -196,7 +280,7 @@ impl Display {
             let target=if self.recording {intro*(1.-handoff)+self.wave[i]*handoff}else{(0.18+0.22*ripple)*(1.-ending*0.65)};
             self.levels[i]+=(target-self.levels[i])*settle;
             let height=((3.+self.levels[i]*16.)*(0.86+progress*0.14)*(0.25+reveal*0.75)).max(1.8);
-            let cx=WIDTH as f32/2.+(i as f32-9.5)*4.6*spread;let cy=HEIGHT as f32/2.;let r=1.3*(1.-ending*0.2);
+            let cx=self.logical_width as f32/2.+(i as f32-9.5)*4.6*spread;let cy=self.logical_height as f32/2.;let r=1.3*(1.-ending*0.2);
             let min_x=((cx-r-1.)*self.sample_scale).floor().max(0.) as i32;
             let max_x=((cx+r+1.)*self.sample_scale).ceil().min(self.rw as f32) as i32;
             let min_y=((cy-height/2.-1.)*self.sample_scale).floor().max(0.) as i32;
@@ -209,6 +293,7 @@ impl Display {
                 let body_alpha=(self.frame[index]>>24) as f32/255.;let fade=1.-ending*smooth((center_distance-0.2)/0.7);
                 self.frame[index]=over(self.frame[index],shade,alpha*0.98*reveal*fade*body_alpha);
             } }
+        }
         }
         // Average premultiplied samples before compositing, preserving clean alpha edges.
         let output=std::slice::from_raw_parts_mut(self.pixels,(self.width*self.height) as usize);

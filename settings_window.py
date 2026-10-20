@@ -3,16 +3,18 @@ from datetime import datetime
 import ctypes
 import json
 import os
+import sys
 from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, messagebox
 import winreg
 
 from runtime_paths import app_root
+from hotkeys import capture_shortcut, shortcut_name, valid_shortcut, DICTATION_DEFAULT, LANGUAGE_DEFAULT
 ROOT = app_root()
 DATA = Path(os.environ.get("LOCALFLOW_DATA", str(Path(os.environ["LOCALAPPDATA"]) / "Transcribr")))
 BG, CARD, FIELD, TEXT, MUTED, ACCENT = "#111111", "#1d1d1d", "#2a2a2a", "#f1f1f1", "#aaaaaa", "#e5e5e5"
-LANGUAGES = {"English only": "en", "Indonesian only": "id"}
+LANGUAGES = {"English only": "en", "Indonesian only": "id", "English + Indonesian": "both"}
 
 def read(path, default):
     try:
@@ -80,8 +82,10 @@ class Window:
         tabs.pack(fill="both", expand=True)
         history = ttk.Frame(tabs, padding=(0, 18))
         settings = ttk.Frame(tabs, padding=(0, 22))
+        shortcuts = ttk.Frame(tabs, padding=(0,22))
         tabs.add(history, text="Recent dictations")
         tabs.add(settings, text="Settings")
+        tabs.add(shortcuts,text="Keyboard shortcuts")
         self.list = tk.Listbox(history, height=6, bg=CARD, fg=TEXT, selectbackground="#444444", selectforeground=TEXT,
             font=("Segoe UI", 11), bd=0, highlightthickness=0, activestyle="none", exportselection=False)
         self.list.pack(fill="x")
@@ -98,7 +102,7 @@ class Window:
         language_code = current.get("language", "en")
         self.language = tk.StringVar(value=next((name for name, code in LANGUAGES.items() if code == language_code), next(iter(LANGUAGES))))
         ttk.Label(settings, text="Recognition language", font=("Segoe UI", 13, "bold")).pack(anchor="w")
-        ttk.Label(settings, text="Choose one language. You can also change it from the taskbar tray icon.", style="Muted.TLabel").pack(anchor="w", pady=(5, 12))
+        ttk.Label(settings, text="Choose a fixed language or both. The language shortcut opens a voice/mouse picker.", style="Muted.TLabel").pack(anchor="w", pady=(5, 12))
         ttk.Combobox(settings, values=list(LANGUAGES), textvariable=self.language, state="readonly", font=("Segoe UI", 11)).pack(fill="x")
         self.cleanup = tk.BooleanVar(value=current.get("cleanup", True))
         self.accuracy = tk.BooleanVar(value=current.get("accuracy", True))
@@ -110,10 +114,31 @@ class Window:
         ttk.Label(settings, text="Names and technical terms, separated by commas.", style="Muted.TLabel").pack(anchor="w", pady=(0, 10))
         self.vocabulary = tk.StringVar(value=current.get("vocabulary", ""))
         ttk.Entry(settings, textvariable=self.vocabulary, font=("Segoe UI", 11)).pack(fill="x")
-        self.feedback = tk.StringVar(value="F12 starts and stops · Esc discards unfinished audio")
+        self.feedback = tk.StringVar(value="Choose Keyboard shortcuts to change the microphone and language keys")
         ttk.Label(settings, textvariable=self.feedback, style="Muted.TLabel").pack(anchor="w", pady=(22, 12))
         ttk.Button(settings, text="Save settings", style="Accent.TButton", command=self.save).pack(anchor="e")
-        ttk.Label(outer, text="Text appears in short live phrases. Models release memory after inactivity.", style="Muted.TLabel").pack(anchor="w", pady=(14, 0))
+        self.dictation_hotkey=current.get('dictation_hotkey',DICTATION_DEFAULT)
+        self.language_hotkey=current.get('language_hotkey',LANGUAGE_DEFAULT)
+        if not valid_shortcut(self.dictation_hotkey):self.dictation_hotkey=DICTATION_DEFAULT
+        if not valid_shortcut(self.language_hotkey) or self.language_hotkey==self.dictation_hotkey:
+            self.dictation_hotkey=DICTATION_DEFAULT;self.language_hotkey=LANGUAGE_DEFAULT
+        ttk.Label(shortcuts,text="Make Transcribr fit your keyboard",font=("Segoe UI",15,"bold")).pack(anchor="w",pady=(0,10))
+        ttk.Label(shortcuts,text="Click a shortcut, then press a key or combination. These shortcuts work globally.",style="Muted.TLabel").pack(anchor="w",pady=(0,25))
+        self.shortcut_buttons={}
+        for field,label in [('dictation_hotkey','Open / close microphone'),('language_hotkey','Choose language')]:
+            row=ttk.Frame(shortcuts);row.pack(fill='x',pady=8)
+            ttk.Label(row,text=label).pack(side='left')
+            button=ttk.Button(row,text=shortcut_name(getattr(self,field)),command=lambda name=field:self.assign_shortcut(name))
+            button.pack(side='right');self.shortcut_buttons[field]=button
+        self.shortcut_feedback=tk.StringVar(value='Defaults: F12 for dictation · F11 for language')
+        ttk.Label(shortcuts,textvariable=self.shortcut_feedback,style='Muted.TLabel').pack(anchor='w',pady=(20,10))
+        actions=ttk.Frame(shortcuts);actions.pack(fill='x',pady=12)
+        ttk.Button(actions,text='Restore F12 / F11',command=self.reset_shortcuts).pack(side='left')
+        ttk.Button(actions,text='Save shortcuts',style='Accent.TButton',command=self.save_shortcuts).pack(side='right')
+        if '--shortcuts' in sys.argv:tabs.select(shortcuts)
+        bottom=ttk.Frame(outer);bottom.pack(fill='x',pady=(14,0))
+        ttk.Button(bottom,text='Keyboard shortcuts',command=lambda:tabs.select(shortcuts)).pack(side='left')
+        ttk.Label(bottom, text="Local phrase dictation", style="Muted.TLabel").pack(side='right')
         self.rows = []
         self.refresh()
         self.root.after(2000, self.poll)
@@ -145,7 +170,7 @@ class Window:
             item = self.rows[selection[0]]
             self.detail.insert("end", f"CLEANED\n\n{item.get('cleaned','')}\n\nORIGINAL\n\n{item.get('raw','')}")
         else:
-            self.detail.insert("end", "Start with your voice.\n\nClick a text field, press F12, and speak English or Indonesian.\nYour recent dictations will appear here.")
+            self.detail.insert("end", "Start with your voice.\n\nClick a text field, use your microphone shortcut, and speak.\nYour recent dictations will appear here.")
         self.detail.configure(state="disabled")
 
     def copy(self, field):
@@ -165,6 +190,28 @@ class Window:
         write(DATA / "settings.json", current)
         startup(self.startup.get())
         self.feedback.set("Saved. Changes apply to your next dictation.")
+
+    def assign_shortcut(self,field):
+        def chosen(value):
+            other='language_hotkey' if field=='dictation_hotkey' else 'dictation_hotkey'
+            if value==getattr(self,other):
+                self.shortcut_feedback.set('Choose different shortcuts for microphone and language');return
+            setattr(self,field,value);self.shortcut_buttons[field].configure(text=shortcut_name(value))
+            self.shortcut_feedback.set('Press Save shortcuts to apply')
+        capture_shortcut(self.root,getattr(self,field),chosen)
+
+    def reset_shortcuts(self):
+        self.dictation_hotkey=DICTATION_DEFAULT;self.language_hotkey=LANGUAGE_DEFAULT
+        for field,button in self.shortcut_buttons.items():button.configure(text=shortcut_name(getattr(self,field)))
+        self.shortcut_feedback.set('Defaults restored · press Save shortcuts to apply')
+
+    def save_shortcuts(self):
+        if not all(valid_shortcut(value) for value in (self.dictation_hotkey,self.language_hotkey)) or self.dictation_hotkey==self.language_hotkey:
+            self.shortcut_feedback.set('Choose two different valid shortcuts');return
+        current=read(DATA/'settings.json',{})
+        current.update(dictation_hotkey=self.dictation_hotkey,language_hotkey=self.language_hotkey)
+        write(DATA/'settings.json',current)
+        self.shortcut_feedback.set('Saved · active when the current recording finishes')
 
 if __name__ == "__main__":
     Window().root.mainloop()

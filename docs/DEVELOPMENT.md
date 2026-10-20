@@ -22,7 +22,7 @@ Setup offers a folder picker, optional sign-in startup, and optional launch. It 
 For automated validation in a **new disposable folder**, the installer accepts:
 
 ```powershell
-.\dist\Transcribr-0.6.0-Setup.exe --silent --dir "C:\path\to\disposable-install" --no-launch --no-startup
+.\dist\Transcribr-0.7.0-Setup.exe --silent --dir "C:\path\to\disposable-install" --no-launch --no-startup
 ```
 
 `--model-cache "C:\path\to\verified-Turbo-files"` allows an offline/cached setup test. Each source model file is checked against the pinned SHA-256 manifest before copying; the normal downloader verifies it again. This does not skip integrity checks. `--preview "C:\path\to\preview.png"` renders the setup window without installation.

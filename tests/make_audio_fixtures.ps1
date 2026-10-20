@@ -9,6 +9,9 @@ $phrases=@{
     'test-live.wav'='I would like to send the report tomorrow. Please include the latest numbers and send a copy to the whole team. We should check the final details before the meeting on Thursday. This is a test of live dictation on my laptop. The text should appear while I am still speaking.'
     'qa\correction-first.wav'='I would like to send the report on Friday.'
     'qa\correction-second.wav'='I would like to send the report on Monday.'
+    'qa\language-english.wav'='English'
+    'qa\language-indonesia.wav'='Indonesia'
+    'qa\language-both.wav'='Both English and Indonesian'
 }
 try {
     foreach ($item in $phrases.GetEnumerator()) {

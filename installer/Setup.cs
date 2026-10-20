@@ -6,6 +6,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -14,13 +15,13 @@ using Microsoft.Win32;
 [assembly: AssemblyTitle("Transcribr Setup")]
 [assembly: AssemblyProduct("Transcribr")]
 [assembly: AssemblyCompany("AlthafTM")]
-[assembly: AssemblyVersion("0.6.0.0")]
-[assembly: AssemblyFileVersion("0.6.0.0")]
+[assembly: AssemblyVersion("0.7.0.0")]
+[assembly: AssemblyFileVersion("0.7.0.0")]
 
 namespace TranscribrSetup {
     internal static class Core {
         internal const string Identity = "Transcribr:{5BFCCF8A-BAA9-48DF-917C-D1DFE4ABCF88}";
-        internal const string Version = "0.6.0";
+        internal const string Version = "0.7.0";
         internal const string UninstallKey = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\Transcribr";
         internal const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
         internal static CancellationTokenSource Cancel = new CancellationTokenSource();
@@ -29,6 +30,29 @@ namespace TranscribrSetup {
         internal static string Root;
         internal static string Cache;
         internal static bool Startup, Launch = true, RemoveModels = true;
+        internal static int DictationKey=123, LanguageKey=122;
+        internal static bool BindingsChanged;
+        internal static bool ValidKey(int value) {
+            int key=value&255;
+            return value>0 && value<=4095 && key>=8 && key<=254 && key!=27 && key!=91 && key!=92 && !(key>=16&&key<=18) && !(key>=160&&key<=165);
+        }
+        internal static string KeyLabel(int value) {
+            string result="";int modifiers=value>>8;
+            if ((modifiers&1)!=0) result+="Ctrl+"; if ((modifiers&2)!=0) result+="Shift+";
+            if ((modifiers&4)!=0) result+="Alt+"; if ((modifiers&8)!=0) result+="Win+";
+            return result+((Keys)(value&255)).ToString();
+        }
+        internal static void ReadBindings() {
+            try {
+                string data=Environment.GetEnvironmentVariable("LOCALFLOW_DATA") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"Transcribr");
+                string json=File.ReadAllText(Path.Combine(data,"settings.json"));
+                var dictation=System.Text.RegularExpressions.Regex.Match(json,"\"dictation_hotkey\"\\s*:\\s*(\\d+)");
+                var language=System.Text.RegularExpressions.Regex.Match(json,"\"language_hotkey\"\\s*:\\s*(\\d+)");
+                int d=dictation.Success?Int32.Parse(dictation.Groups[1].Value):123;
+                int l=language.Success?Int32.Parse(language.Groups[1].Value):122;
+                if (ValidKey(d)&&ValidKey(l)&&d!=l) {DictationKey=d;LanguageKey=l;}
+            } catch {}
+        }
         internal static string Q(string text) { return "\"" + text.Replace("\"", "\\\"") + "\""; }
         internal static string Normalize(string path) { return Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar); }
         internal static string Marker { get { return Path.Combine(Root, "install-manifest.txt"); } }
@@ -164,8 +188,11 @@ namespace TranscribrSetup {
             if (Run(Inside(@"runtime\worker\TranscribrWorker.exe"), arguments, true) != 0)
                 throw new InvalidOperationException("Speech model setup did not finish. Check your internet connection and try again. Verified downloads are reused. Details: " + Inside("setup.log"));
             Cancel.Token.ThrowIfCancellationRequested();
+            if (BindingsChanged && Run(Inside("Transcribr.exe"),"--set-hotkeys "+DictationKey+" "+LanguageKey,false)!=0)
+                throw new InvalidOperationException("Could not save the keyboard shortcuts");
             Progress(95, "Creating shortcuts…");
             Shortcut(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs), "Transcribr.lnk"), Inside("Transcribr.exe"), "");
+            Shortcut(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs), "Transcribr Settings.lnk"), Inside("Transcribr.exe"), "--settings");
             using (RegistryKey key = Registry.CurrentUser.CreateSubKey(UninstallKey)) {
                 key.SetValue("DisplayName", "Transcribr"); key.SetValue("DisplayVersion", Version);
                 key.SetValue("Publisher", "AlthafTM"); key.SetValue("InstallLocation", Root);
@@ -179,7 +206,7 @@ namespace TranscribrSetup {
                 if (Startup) key.SetValue("Transcribr", Q(Inside("Transcribr.exe")));
                 else key.DeleteValue("Transcribr", false);
             }
-            Log("Installation complete"); Progress(100, "Ready — choose a language in the tray, click a text field, and press F12");
+            Log("Installation complete"); Progress(100, "Ready — "+KeyLabel(DictationKey)+" to dictate · "+KeyLabel(LanguageKey)+" to choose a language");
             if (Launch) Process.Start(new ProcessStartInfo(Inside("Transcribr.exe")) { WorkingDirectory = Root, UseShellExecute = false, CreateNoWindow = true });
 #endif
         }
@@ -218,7 +245,8 @@ namespace TranscribrSetup {
                 if (key != null && String.Equals(key.GetValue("InstallLocation") as string, Root, StringComparison.OrdinalIgnoreCase))
                     Registry.CurrentUser.DeleteSubKeyTree(UninstallKey, false);
             }
-            string shortcut = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs), "Transcribr.lnk");
+            foreach (string shortcutName in new[] {"Transcribr.lnk","Transcribr Settings.lnk"}) {
+            string shortcut = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs), shortcutName);
             // Only remove a shortcut that points to this installation.
             if (File.Exists(shortcut)) {
                 Type type = Type.GetTypeFromProgID("WScript.Shell"); object shell = Activator.CreateInstance(type);
@@ -227,6 +255,7 @@ namespace TranscribrSetup {
                 if (String.Equals(target, Inside("Transcribr.exe"), StringComparison.OrdinalIgnoreCase)) File.Delete(shortcut);
                 System.Runtime.InteropServices.Marshal.FinalReleaseComObject(link);
                 System.Runtime.InteropServices.Marshal.FinalReleaseComObject(shell);
+            }
             }
             string helper = Path.Combine(Path.GetTempPath(), "Transcribr-remove-" + Guid.NewGuid().ToString("N") + ".exe");
             File.Copy(Application.ExecutablePath, helper);
@@ -252,8 +281,31 @@ namespace TranscribrSetup {
         }
     }
 
+    internal sealed class ShortcutCapture : Form {
+        [DllImport("user32.dll")] static extern short GetAsyncKeyState(int key);
+        internal int Value;
+        EventWaitHandle capture;
+        internal ShortcutCapture() {
+            Text="Assign shortcut";ClientSize=new Size(380,125);StartPosition=FormStartPosition.CenterParent;
+            FormBorderStyle=FormBorderStyle.FixedDialog;MaximizeBox=false;MinimizeBox=false;KeyPreview=true;
+            BackColor=Color.FromArgb(20,20,22);ForeColor=Color.WhiteSmoke;Font=new Font("Segoe UI",11);
+            Controls.Add(new Label{Text="Press a key or key combination",Left=22,Top=24,Width=340,Height=28});
+            Controls.Add(new Label{Text="Esc cancels · Modifiers can be combined",Left=22,Top=65,Width=340,Height=25,Font=new Font("Segoe UI",9)});
+            capture=new EventWaitHandle(true,EventResetMode.ManualReset,@"Local\Transcribr.ShortcutCapture");
+            KeyDown+=delegate(object sender,KeyEventArgs e) {
+                e.SuppressKeyPress=true;e.Handled=true;
+                if (e.KeyCode==Keys.Escape) {DialogResult=DialogResult.Cancel;Close();return;}
+                int key=(int)e.KeyCode;
+                int modifiers=(e.Control?1:0)|(e.Shift?2:0)|(e.Alt?4:0)|((GetAsyncKeyState(91)<0||GetAsyncKeyState(92)<0)?8:0);
+                int value=key|(modifiers<<8);
+                if (Core.ValidKey(value)) {Value=value;DialogResult=DialogResult.OK;Close();}
+            };
+            FormClosed+=delegate {capture.Dispose();};
+        }
+    }
+
     internal class SetupWindow : Form {
-        TextBox folder; CheckBox startup, launch, models; Button action, close, browse;
+        TextBox folder; CheckBox startup, launch, models; Button action, close, browse,dictation,language;
         Label status; ProgressBar progress; bool busy;
         internal SetupWindow() {
             SuspendLayout();
@@ -263,7 +315,7 @@ namespace TranscribrSetup {
             bool uninstall = false;
 #endif
             Text = uninstall ? "Uninstall Transcribr" : "Transcribr Setup";
-            ClientSize = new Size(540, 400); StartPosition = FormStartPosition.CenterScreen;
+            ClientSize = new Size(540, uninstall?400:480); StartPosition = FormStartPosition.CenterScreen;
             FormBorderStyle = FormBorderStyle.FixedDialog; MaximizeBox = false;
             Font = new Font("Segoe UI", 10);
             BackColor = Color.FromArgb(20,20,22); ForeColor = Color.WhiteSmoke;
@@ -276,11 +328,19 @@ namespace TranscribrSetup {
             startup = new CheckBox {Text="Start Transcribr when I sign in to Windows", Left=30, Top=187, Width=480, Checked=Core.Startup, Visible=!uninstall}; Controls.Add(startup);
             launch = new CheckBox {Text="Open Transcribr when setup finishes", Left=30, Top=216, Width=480, Checked=Core.Launch, Visible=!uninstall}; Controls.Add(launch);
             models = new CheckBox {Text="Remove downloaded speech models", Left=30, Top=187, Width=480, Checked=true, Visible=uninstall}; Controls.Add(models);
-            status = new Label {Text=uninstall ? "" : "Initial setup needs internet and at least 8 GB of free space", Left=30, Top=252, Width=480, Height=40}; Controls.Add(status);
-            progress = new ProgressBar {Left=30, Top=300, Width=480, Height=10}; Controls.Add(progress);
-            action = new Button {Text=uninstall ? "Uninstall" : "Install", Left=300, Top=341, Width=100, Height=34}; Controls.Add(action);
-            close = new Button {Text="Close", Left=412, Top=341, Width=98, Height=34}; Controls.Add(close);
-            foreach (Button button in new[] {action,close,browse}) {
+            if (!uninstall) {
+                Controls.Add(new Label{Text="Microphone",Left=30,Top=257,Width=110,Height=25});
+                Controls.Add(new Label{Text="Language picker",Left=280,Top=257,Width=130,Height=25});
+            }
+            dictation=new Button{Text=Core.KeyLabel(Core.DictationKey),Left=30,Top=284,Width=225,Height=34,Visible=!uninstall};Controls.Add(dictation);
+            language=new Button{Text=Core.KeyLabel(Core.LanguageKey),Left=280,Top=284,Width=230,Height=34,Visible=!uninstall};Controls.Add(language);
+            dictation.Click+=delegate {AssignKey(true);};language.Click+=delegate {AssignKey(false);};
+            int offset=uninstall?0:80;
+            status = new Label {Text=uninstall ? "" : "Initial setup needs internet and at least 8 GB of free space", Left=30, Top=252+offset, Width=480, Height=40}; Controls.Add(status);
+            progress = new ProgressBar {Left=30, Top=300+offset, Width=480, Height=10}; Controls.Add(progress);
+            action = new Button {Text=uninstall ? "Uninstall" : "Install", Left=300, Top=341+offset, Width=100, Height=34}; Controls.Add(action);
+            close = new Button {Text="Close", Left=412, Top=341+offset, Width=98, Height=34}; Controls.Add(close);
+            foreach (Button button in new[] {action,close,browse,dictation,language}) {
                 button.FlatStyle=FlatStyle.Flat; button.FlatAppearance.BorderSize=0;
                 button.BackColor=Color.Gainsboro; button.ForeColor=Color.Black;
             }
@@ -289,6 +349,7 @@ namespace TranscribrSetup {
             action.Click += async delegate {
                 busy=true; action.Enabled=false; browse.Enabled=false; folder.ReadOnly=true;
                 startup.Enabled=false; launch.Enabled=false; models.Enabled=false; close.Text="Cancel";
+                dictation.Enabled=false;language.Enabled=false;
                 Core.Root=folder.Text; Core.Startup=startup.Checked; Core.Launch=launch.Checked; Core.RemoveModels=models.Checked;
                 Core.Cancel = new CancellationTokenSource();
                 Core.Progress = delegate(int amount, string text) { BeginInvoke((Action)delegate {
@@ -304,10 +365,21 @@ namespace TranscribrSetup {
             AutoScaleMode = AutoScaleMode.Dpi;
             ResumeLayout(true);
         }
+        void AssignKey(bool microphone) {
+            using (ShortcutCapture picker=new ShortcutCapture()) {
+                if (picker.ShowDialog(this)!=DialogResult.OK) return;
+                if (picker.Value==(microphone?Core.LanguageKey:Core.DictationKey)) {
+                    MessageBox.Show(this,"Choose different shortcuts for microphone and language",Text);return;
+                }
+                if (microphone) Core.DictationKey=picker.Value;else Core.LanguageKey=picker.Value;
+                Core.BindingsChanged=true;dictation.Text=Core.KeyLabel(Core.DictationKey);language.Text=Core.KeyLabel(Core.LanguageKey);
+            }
+        }
     }
     internal static class Program {
         [STAThread] static int Main(string[] args) {
             Application.EnableVisualStyles(); Application.SetCompatibleTextRenderingDefault(false);
+            Core.ReadBindings();
             Core.Root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "Transcribr");
 #if UNINSTALLER
             Core.Root=AppDomain.CurrentDomain.BaseDirectory;

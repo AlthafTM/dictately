@@ -12,16 +12,19 @@ from pathlib import Path
 import subprocess
 import sys
 import time
+import tomllib
 import uuid
 import winreg
 
 ROOT = Path(__file__).resolve().parents[1]
 QA = ROOT / "qa"
 INSTALL = QA / ("installer smoke " + uuid.uuid4().hex[:8])
-INSTALLER = ROOT / "dist/Transcribr-0.6.0-Setup.exe"
+VERSION=tomllib.loads((ROOT/'native/Cargo.toml').read_text(encoding='utf-8'))['package']['version']
+INSTALLER = ROOT / f"dist/Transcribr-{VERSION}-Setup.exe"
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 APP_KEY = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\Transcribr"
 SHORTCUT = Path(os.environ["APPDATA"]) / "Microsoft/Windows/Start Menu/Programs/Transcribr.lnk"
+SETTINGS_SHORTCUT=SHORTCUT.with_name('Transcribr Settings.lnk')
 
 
 def values(path):
@@ -65,6 +68,7 @@ def main():
     prior_run = (values(RUN_KEY) or {}).get("Transcribr")
     prior_app = values(APP_KEY)
     prior_shortcut = SHORTCUT.read_bytes() if SHORTCUT.exists() else None
+    prior_settings_shortcut=SETTINGS_SHORTCUT.read_bytes() if SETTINGS_SHORTCUT.exists() else None
     environment = dict(os.environ, TRANSCRIBR_ROOT=str(INSTALL), LOCALFLOW_DATA=str(QA / "installed-data"))
     environment["PATH"] = os.pathsep.join([str(Path(os.environ["WINDIR"]) / "System32"), os.environ["WINDIR"]])
     results = {}
@@ -76,6 +80,7 @@ def main():
         assert (INSTALL / "install-manifest.txt").is_file()
         assert not (INSTALL / ".venv").exists()
         assert (values(APP_KEY) or {})["InstallLocation"][0] == str(INSTALL)
+        assert SETTINGS_SHORTCUT.exists()
         results["installed_without_system_python"] = True
         worker = INSTALL / "runtime/worker/TranscribrWorker.exe"
         result = run([worker, "--self-check"], env=environment)
@@ -99,6 +104,10 @@ def main():
         settings.wait(timeout=10)
         assert settings.returncode == 0
         results["bundled_settings"] = True
+        run([INSTALL/'Transcribr.exe','--set-hotkeys','123','889'],env=environment)
+        keys=json.loads((QA/'installed-data/settings.json').read_text())
+        assert keys['dictation_hotkey']==123 and keys['language_hotkey']==889
+        results['installed_shortcut_configuration']=True
         run([sys.executable, ROOT / "test_lifecycle.py", "--app-dir", INSTALL], cwd=ROOT)
         result = run([sys.executable, ROOT / "test_native.py", "--quick", "--app-dir", INSTALL], cwd=ROOT)
         desktop = json.loads(result.stdout)
@@ -137,6 +146,8 @@ def main():
             SHORTCUT.write_bytes(prior_shortcut)
         elif SHORTCUT.exists():
             SHORTCUT.unlink()
+        if prior_settings_shortcut is not None:SETTINGS_SHORTCUT.write_bytes(prior_settings_shortcut)
+        elif SETTINGS_SHORTCUT.exists():SETTINGS_SHORTCUT.unlink()
 
 
 if __name__ == "__main__":

@@ -24,8 +24,9 @@ if sys.stdin is not None:
 from engine import Engine
 from speech_models import selected_model
 from worker_protocol import read_request
+from language_commands import BilingualBackend, language_command
 
-LANGUAGES = {"en", "id"}
+LANGUAGES = {"en", "id", "both"}
 
 def needs_fragment_cleanup(text):
     """Keep clean ongoing speech on the fast path; edit audible disfluencies."""
@@ -150,6 +151,7 @@ class Worker:
                 self.device = "cpu"
                 self.engine.whisper = WhisperModel(model_path, device="cpu", compute_type="int8",
                     cpu_threads=4, num_workers=1, local_files_only=True)
+            self.engine.whisper.model = BilingualBackend(self.engine.whisper.model)
 
     def process(self, request):
         import numpy as np
@@ -163,6 +165,18 @@ class Worker:
         self.prepare()
         audio = np.array(request["samples"], dtype=np.float32, copy=True)
         audio *= 1.0 / 32768.0
+        if request['command']=='select_language':
+            if len(audio)<6400 or float(np.sqrt(np.mean(audio*audio)))<.001:
+                return {'type':'language_selected','id':request.get('id',0),'language':None,'consumed':len(audio)}
+            choices=[]
+            for language in ('en','id'):
+                segments,_=self.engine.whisper.transcribe(audio,language=language,beam_size=3,
+                    temperature=0.0,condition_on_previous_text=False,vad_filter=True)
+                choice=language_command(' '.join(segment.text for segment in segments))
+                if choice:choices.append(choice)
+            # A spoken "both" wins, otherwise conflicting decodes require a retry.
+            selected='both' if 'both' in choices else choices[0] if choices and len(set(choices))==1 else None
+            return {'type':'language_selected','id':request.get('id',0),'language':selected,'consumed':len(audio)}
         final = request.get("final", False)
         if len(audio) < 3200 or float(np.sqrt(np.dot(audio, audio) / len(audio))) < .0005:
             return {"type": "result", "id": request["id"], "raw": "", "cleaned": "", "preview": "",
@@ -174,7 +188,14 @@ class Worker:
             vad_parameters={"min_silence_duration_ms": 500, "speech_pad_ms": 300}, condition_on_previous_text=False,
             hotwords=vocabulary or None,
             compression_ratio_threshold=1.9, log_prob_threshold=-.8, hallucination_silence_threshold=1.0)
-        segments, _ = model.transcribe(audio, language=selected, **options)
+        if selected=='both':
+            # The underlying detector is filtered by BilingualBackend, including
+            # detection performed by faster-whisper inside multilingual segments.
+            segments, info = model.transcribe(audio, language=None, multilingual=True, **options)
+            detected=getattr(info,'language','en')
+        else:
+            segments, info = model.transcribe(audio, language=selected, **options)
+            detected=selected
         segments = list(segments)
         preview = " ".join(seg.text.strip() for seg in segments).strip()
         words = [word for seg in segments for word in (seg.words or [])]
@@ -210,7 +231,7 @@ class Worker:
         cleaned = dictation_punctuation(re.sub(r"\s+", " ", cleaned).strip())
         self.engine.last_used = time.monotonic()
         return {"type": "result", "id": request["id"], "raw": raw, "cleaned": cleaned,
-            "preview": preview, "consumed": consumed, "language": selected,
+            "preview": preview, "consumed": consumed, "language": detected if detected in ('en','id') else 'en',
             "through": 0, "flushed":flush,
             "cleanup_applied": applied, "accuracy_retry": False, "seconds": round(time.monotonic() - started, 3)}
 

@@ -10,7 +10,7 @@ Transcribr runs speech recognition **locally on your computer**. These options d
 | `small` — Whisper Small multilingual | Lower memory use or trying CPU-only dictation | Smaller model, but recognition can be less accurate; not the English-only `small.en` model |
 | `large-v3` — full Whisper large-v3 | Testing whether a larger decoder reduces mistakes on your voice | More storage, memory, and processing; live output may lag more |
 
-All three use the same **English only / Indonesian only** tray controls, F12 hotkey, local history, corrections, and destination protection. Installing a model does not add automatic language switching or additional supported app languages.
+All three use the same Windows **English / Indonesian / Both** controls, F11 voice/mouse picker, configurable F12/F11 defaults, local history, corrections, and destination protection. Both constrains per-segment detection to English/Indonesian; installing a model does not add other supported languages.
 
 Turbo is a pruned version of Large-v3 with 4 decoder layers instead of 32, trading some quality for speed: see the [Turbo model card](https://huggingface.co/openai/whisper-large-v3-turbo). The optional [Small](https://huggingface.co/Systran/faster-whisper-small) and [Large-v3](https://huggingface.co/Systran/faster-whisper-large-v3) packages are CTranslate2 conversions compatible with the existing worker.
 

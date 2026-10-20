@@ -4,6 +4,7 @@ mod display;
 mod typing;
 mod corrections;
 mod worker;
+mod hotkeys;
 
 use std::{collections::HashSet, fs, io::Write, os::windows::process::CommandExt, path::PathBuf,
     process::Command, sync::{atomic::{AtomicBool, AtomicIsize, Ordering}, mpsc::{Receiver, Sender}}, time::{Duration, Instant, SystemTime, UNIX_EPOCH}};
@@ -17,22 +18,25 @@ const TOGGLE: u32 = WM_APP + 1;
 const CANCEL: u32 = WM_APP + 2;
 const TRAY: u32 = WM_APP + 3;
 const QUIT: u32 = WM_APP + 4;
+const LANGUAGE: u32 = WM_APP + 5;
 static HWND_ATOMIC: AtomicIsize = AtomicIsize::new(0);
 static RECORDING: AtomicBool = AtomicBool::new(false);
 static F12_DOWN: AtomicBool = AtomicBool::new(false);
+static LANGUAGE_DOWN: AtomicBool = AtomicBool::new(false);
 // Only the Windows message-loop thread accesses APP; other threads use channels.
 static mut APP: *mut App = std::ptr::null_mut();
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(default)]
-struct Settings { language: String, cleanup: bool, accuracy: bool, vocabulary: String, max_recording_seconds: u32 }
+struct Settings { language: String, cleanup: bool, accuracy: bool, vocabulary: String, max_recording_seconds: u32, dictation_hotkey:u32, language_hotkey:u32 }
 impl Default for Settings {
-    fn default() -> Self { Self { language: "en".into(), cleanup: true, accuracy: true, vocabulary: String::new(), max_recording_seconds: 120 } }
+    fn default() -> Self { Self { language: "en".into(), cleanup: true, accuracy: true, vocabulary: String::new(), max_recording_seconds: 120, dictation_hotkey:123,language_hotkey:122 } }
 }
 impl Settings {
     fn load(data: &PathBuf) -> Self {
         let mut value: Self = fs::read(data.join("settings.json")).ok().and_then(|bytes| serde_json::from_slice(&bytes).ok()).unwrap_or_default();
-        if value.language != "en" && value.language != "id" { value.language = "en".into(); }
+        if !matches!(value.language.as_str(),"en"|"id"|"both") { value.language = "en".into(); }
+        if !hotkeys::pair(value.dictation_hotkey,value.language_hotkey) {value.dictation_hotkey=123;value.language_hotkey=122;}
         value.max_recording_seconds = value.max_recording_seconds.clamp(10, 120);
         value
     }
@@ -51,9 +55,60 @@ struct App {
     raw: String, cleaned: String, pending: String, inserted: usize, languages: HashSet<String>, speech_model: String,
     tray: NOTIFYICONDATAW, icon: HICON, record_icon: HICON,
     test_samples: Option<Vec<i16>>, test_offset: usize, test_target: Option<usize>,
+    picker:bool, picker_pending:bool, picker_voice:Instant, settings_checked:Instant,
 }
 
 impl App {
+    fn apply_hotkeys(&self) {
+        hotkeys::DICTATION.store(self.settings.dictation_hotkey,Ordering::Relaxed);
+        hotkeys::LANGUAGE.store(self.settings.language_hotkey,Ordering::Relaxed);
+    }
+    unsafe fn request_picker(&mut self) {
+        if self.picker {self.close_picker();return;}
+        if self.recording || self.finishing || self.mic_stopping || self.display.is_visible() {
+            self.picker_pending=!self.picker_pending;
+            if self.recording {self.stop(false);}
+            return;
+        }
+        self.open_picker();
+    }
+    unsafe fn open_picker(&mut self) {
+        self.picker_pending=false;self.picker=true;self.session+=1;
+        self.input.invalidate(self.session);self.input_inflight=false;
+        self.settings=Settings::load(&self.data);self.apply_hotkeys();
+        self.pending.clear();self.raw.clear();self.cleaned.clear();self.buffer.clear();self.total_samples=0;
+        self.test_offset=0;self.last_sent_len=0;self.request_id=0;self.started=Instant::now();self.last_voice=self.started;self.picker_voice=self.started;
+        self.recording=true;self.finishing=false;self.hide_at=None;self.mic_stopping=false;
+        RECORDING.store(true,Ordering::Relaxed);
+        self.mic_starting=self.test_samples.is_none();self.capture=None;
+        if self.mic_starting {self.microphone.start(self.session,Duration::ZERO);}
+        self.display.set_picker(true);
+        self.display.selected=match self.settings.language.as_str() {"id"=>1,"both"=>2,_=>0};
+        self.display.recording=true;self.display.cue("");self.display.show("","");
+        self.inflight=true;self.worker_loaded=true;
+        let _=self.requests.send(worker::Work::Request(self.session,json!({"command":"prepare","id":0}),None));
+        SetTimer(self.display.hwnd,1,16,None);self.timer_interval=16;self.update_tip();self.status("language_picker");
+    }
+    unsafe fn close_picker(&mut self) {
+        if !self.picker {return;}
+        if self.test_samples.is_none() {self.microphone.stop(self.session);}
+        self.session+=1;self.input.invalidate(self.session);
+        self.capture=None;self.recording=false;self.picker=false;self.picker_pending=false;
+        self.mic_starting=false;self.mic_stopping=false;self.finishing=false;self.inflight=false;
+        self.buffer.clear();self.pending.clear();RECORDING.store(false,Ordering::Relaxed);
+        self.display.recording=false;self.display.cue("");self.display.hide();self.hide_at=None;
+        self.update_tip();self.status("ready");
+    }
+    unsafe fn choose_language(&mut self,language:&str) {
+        if !matches!(language,"en"|"id"|"both") {return;}
+        self.settings=Settings::load(&self.data);self.settings.language=language.into();
+        let path=self.data.join("settings.json");let temporary=path.with_extension("tmp");
+        if fs::write(&temporary,serde_json::to_vec_pretty(&self.settings).unwrap()).is_err() || fs::rename(&temporary,&path).is_err() {
+            self.log("Could not save language selection");return;
+        }
+        self.display.selected=match language {"id"=>1,"both"=>2,_=>0};
+        if self.picker {self.close_picker();} else {self.update_tip();self.status("ready");}
+    }
     unsafe fn new(root: PathBuf, data: PathBuf, hwnd: HWND, test_samples: Option<Vec<i16>>) -> Self {
         let (requests, responses) = worker::start(root.clone(), data.clone());
         let icon = LoadImageW(std::ptr::null_mut(), wide(&root.join("assets/transcribr.ico").to_string_lossy()).as_ptr(), IMAGE_ICON, 32, 32, LR_LOADFROMFILE) as HICON;
@@ -71,13 +126,15 @@ impl App {
             session: 0, request_id: 0, buffer: Vec::new(), total_samples: 0, last_sent_len: 0, skip_samples: 0,
             last_request: now, started: now, last_voice: now, last_work: now, last_insert: now,
             worker_loaded: false, hide_at: None, timer_interval:1000, raw: String::new(), cleaned: String::new(), pending: String::new(),
-            inserted: 0, languages: HashSet::new(), speech_model:"loading".into(), tray, icon, record_icon, test_samples, test_offset: 0, test_target: None };
+            inserted: 0, languages: HashSet::new(), speech_model:"loading".into(), tray, icon, record_icon, test_samples, test_offset: 0, test_target: None,
+            picker:false,picker_pending:false,picker_voice:now,settings_checked:now };
+        app.apply_hotkeys();
         app.update_tip(); app
     }
     unsafe fn update_tip(&mut self) {
         self.tray.szTip.fill(0);
-        let language = if self.settings.language == "id" { "Indonesian only" } else { "English only" };
-        let state = if self.recording { "Recording" } else if self.finishing { "Finishing" } else { "F12" };
+        let language = match self.settings.language.as_str() {"id"=>"Indonesian","both"=>"English + Indonesian",_=>"English"};
+        let state = if self.picker {"Language picker".to_string()} else if self.recording {"Recording".into()} else if self.finishing {"Finishing".into()} else {hotkeys::name(self.settings.dictation_hotkey)};
         let tip = wide(&format!("Transcribr · {language} · {state}"));
         self.tray.szTip[..tip.len()].copy_from_slice(&tip);
         Shell_NotifyIconW(NIM_MODIFY, &self.tray);
@@ -90,12 +147,14 @@ impl App {
     fn status(&self, state: &str) {
         let value = json!({"pid": std::process::id(), "state": state, "version":env!("CARGO_PKG_VERSION"), "speech_model":self.speech_model, "app":"Transcribr", "hwnd":self.display.hwnd as usize,
             "at_unix":unix(), "live_commits":self.inserted, "language":self.settings.language, "worker_loaded":self.worker_loaded,
+            "language_picker":self.picker,"dictation_hotkey":self.settings.dictation_hotkey,"language_hotkey":self.settings.language_hotkey,
             "engine_ready":self.worker_loaded && !self.inflight, "editor_locked":self.editor_locked, "pending_characters":self.pending.chars().count(),
             "microphone_ready":self.capture.is_some() || self.test_samples.is_some(), "microphone_starting":self.mic_starting,
             "microphone_stopping":self.mic_stopping, "audio_samples":self.total_samples});
         let _ = fs::write(self.data.join("status.json"), value.to_string());
     }
     unsafe fn notice(&mut self, title: &str, message: &str, seconds: u64) {
+        if !self.picker {self.display.set_picker(false);}
         self.display.recording = false; self.display.preview.clear();
         self.display.cue(if title.contains("microphone") { "Mic error" } else if title.contains("attention") { "Engine error" }
             else if title == "Done" { "Stopped" } else if title == "Dictation stopped" { "Cancelled" } else { "No speech" });
@@ -115,11 +174,13 @@ impl App {
         }
     }
     unsafe fn toggle(&mut self, expected: HWND) {
+        if self.picker {self.close_picker();return;}
         if self.finishing { return; }
         else if self.recording { self.stop(false); }
         else { self.start(expected); }
     }
     unsafe fn start(&mut self, expected: HWND) {
+        self.display.set_picker(false);
         // Record the original OS input destination before querying lazy accessibility
         // providers. Resolution may finish later, only while that origin is unchanged.
         self.session += 1;
@@ -128,7 +189,7 @@ impl App {
         self.correction_wait=false; self.phrase_start=true;
         if !valid && self.test_target != Some(0) {
             self.log("No keyboard input destination at F12");
-            self.notice("Input needs attention", "Click the message or text box, then press F12 again.", 3);
+            self.notice("Input needs attention", &format!("Click a text box, then press {} again.",hotkeys::name(self.settings.dictation_hotkey)), 3);
             return;
         }
         self.settings = Settings::load(&self.data);
@@ -145,7 +206,7 @@ impl App {
         self.recording = true; self.finishing = false; self.hide_at = None;
         RECORDING.store(true, Ordering::Relaxed); self.display.recording = true;
         self.display.wave.iter_mut().for_each(|v| *v = 0.); self.display.preview.clear();
-        self.display.language = if self.settings.language == "id" { "ID" } else { "EN" }.into();
+        self.display.language = match self.settings.language.as_str() {"id"=>"ID","both"=>"EN + ID",_=>"EN"}.into();
         self.display.cue("Listening");
         self.display.show(if self.worker_loaded { "Listening" } else { "Listening · loading speech model" }, "");
         self.tray.hIcon = self.record_icon; Shell_NotifyIconW(NIM_MODIFY, &self.tray);
@@ -199,6 +260,7 @@ impl App {
         }
     }
     unsafe fn stop(&mut self, cancel: bool) {
+        if self.picker {self.close_picker();return;}
         if !self.recording { return; }
         self.collect_audio();
         if self.test_samples.is_none() {
@@ -224,6 +286,14 @@ impl App {
     }
     unsafe fn dispatch(&mut self) {
         if self.inflight || self.mic_stopping { return; }
+        if self.picker {
+            if self.mic_starting || self.buffer.len()<8000 || self.picker_voice.elapsed()<Duration::from_millis(700) {return;}
+            if self.last_voice.elapsed()<Duration::from_millis(450) && self.buffer.len()<64000 {return;}
+            self.request_id+=1;self.inflight=true;self.picker_voice=Instant::now();
+            let length=self.buffer.len().min(16000*5);
+            let _=self.requests.send(worker::Work::Request(self.session,json!({"command":"select_language","id":self.request_id}),Some(self.buffer[..length].to_vec())));
+            return;
+        }
         if self.finishing && self.buffer.len() < 3200 { self.finish(); return; }
         if !self.recording && !self.finishing { return; }
         let final_chunk = self.finishing;
@@ -248,8 +318,15 @@ impl App {
         self.inflight = false; self.last_work = Instant::now();
         let value = event.value;
         match value["type"].as_str().unwrap_or("error") {
+            "language_selected" => {
+                if !self.picker {return;}
+                let consumed=(value["consumed"].as_u64().unwrap_or(0) as usize).min(self.buffer.len());self.buffer.drain(..consumed);
+                if let Some(language)=value["language"].as_str() {self.choose_language(language);return;}
+                self.status("language_picker");
+            }
             "ready" => { self.speech_model = value["model"].as_str().unwrap_or("unknown").into(); self.log(&format!("Inference ready: {} {}", value["device"], self.speech_model)); if self.recording { self.display.title = "Listening".into(); } self.status(if self.recording { "recording" } else if self.finishing {"processing"} else { "ready" }); }
             "result" => {
+                if self.picker {return;}
                 let consumed = value["consumed"].as_u64().unwrap_or(0) as usize;
                 let raw = value["raw"].as_str().unwrap_or("");
                 let cleaned = value["cleaned"].as_str().unwrap_or(raw);
@@ -361,12 +438,18 @@ impl App {
     }
     unsafe fn tick(&mut self) {
         self.receive_audio();
+        if !self.recording && !self.finishing && self.settings_checked.elapsed()>Duration::from_millis(500) {
+            let settings=Settings::load(&self.data);
+            let changed=settings.dictation_hotkey!=self.settings.dictation_hotkey || settings.language_hotkey!=self.settings.language_hotkey || settings.language!=self.settings.language;
+            self.settings=settings;self.apply_hotkeys();self.settings_checked=Instant::now();
+            if changed {self.update_tip();self.status("ready");}
+        }
         if self.recording {
             self.collect_audio();
-            if self.last_insert.elapsed() >= Duration::from_millis(if self.editor_locked {120} else {500}) { self.try_insert(); }
+            if !self.picker && self.last_insert.elapsed() >= Duration::from_millis(if self.editor_locked {120} else {500}) { self.try_insert(); }
             self.display.redraw();
             let test_done = self.test_samples.as_ref().is_some_and(|s| self.test_offset >= s.len());
-            if self.started.elapsed().as_secs() >= self.settings.max_recording_seconds as u64 || test_done { self.stop(false); }
+            if self.started.elapsed().as_secs() >= if self.picker {30}else{self.settings.max_recording_seconds as u64} || (test_done&&!self.picker) { self.stop(false); }
         }
         while let Ok(event) = self.responses.try_recv() { self.receive(event); }
         while let Some(event)=self.input.poll() {self.receive_input(event);}
@@ -376,6 +459,7 @@ impl App {
         }
         if self.hide_at.is_some_and(|at| Instant::now() >= at) { self.display.hide(); self.hide_at = None; }
         self.display.animate();
+        if self.picker_pending && !self.recording && !self.finishing && !self.inflight && !self.mic_stopping && !self.display.is_visible() {self.open_picker();}
         let interval = if !self.recording && !self.finishing && !self.display.is_visible() { 1000 }
             else if self.recording && self.started.elapsed().as_millis() > 1200 { 33 } else { 16 };
         if interval != self.timer_interval { SetTimer(self.display.hwnd, 1, interval, None); self.timer_interval = interval; }
@@ -383,31 +467,31 @@ impl App {
     unsafe fn menu(&mut self) {
         if !self.recording && !self.finishing { self.settings = Settings::load(&self.data); }
         let menu = CreatePopupMenu();
-        for (id, title) in [(102, "English only"), (103, "Indonesian only"), (100, "History & settings"), (104, "Start with Windows"), (105, "Quit Transcribr")] {
+        for (id, title) in [(106,"Change language"),(102, "English only"), (103, "Indonesian only"),(107,"English + Indonesian"), (100, "History & settings"),(108,"Keyboard shortcuts"), (104, "Start with Windows"), (105, "Quit Transcribr")] {
             let checked = (id == 102 && self.settings.language == "en")
-                || (id == 103 && self.settings.language == "id") || (id == 104 && startup_command().is_some());
-            let disabled = if (id == 102 || id == 103) && (self.recording || self.finishing) { MF_GRAYED } else { 0 };
+                || (id == 103 && self.settings.language == "id") || (id==107 && self.settings.language=="both") || (id == 104 && startup_command().is_some());
+            let disabled = if matches!(id,102|103|107) && (self.recording || self.finishing) { MF_GRAYED } else { 0 };
             AppendMenuW(menu, MF_STRING | disabled | if checked { MF_CHECKED } else { 0 }, id, wide(title).as_ptr());
         }
         let mut point: POINT = std::mem::zeroed(); GetCursorPos(&mut point); SetForegroundWindow(self.display.hwnd);
         let selection = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON, point.x, point.y, 0, self.display.hwnd, std::ptr::null());
         DestroyMenu(menu);
         match selection {
-            100 => { self.open_settings(); }
-            102..=103 => { self.settings.language = if selection == 103 { "id" } else { "en" }.into();
-                let _ = fs::write(self.data.join("settings.json"), serde_json::to_vec_pretty(&self.settings).unwrap());
-                self.update_tip(); self.status("ready"); }
+            100|108 => { self.open_settings(selection==108); }
+            106=>self.request_picker(),
+            102|103|107 => self.choose_language(match selection {103=>"id",107=>"both",_=>"en"}),
             104 => { set_startup(&self.root, startup_command().is_none()); }
             105 => { PostMessageW(self.display.hwnd, QUIT, 0, 0); }
             _ => {}
         }
     }
-    fn open_settings(&self) {
+    fn open_settings(&self,shortcuts:bool) {
         let bundled = self.root.join("runtime/settings/TranscribrSettings.exe");
         let mut command = if bundled.is_file() { Command::new(bundled) } else {
             let mut python = Command::new(self.root.join(".venv/Scripts/pythonw.exe"));
             python.arg(self.root.join("settings_window.py")); python
         };
+        if shortcuts {command.arg("--shortcuts");}
         let _ = command.current_dir(&self.root).env("TRANSCRIBR_ROOT", &self.root).creation_flags(0x08000000).spawn();
     }
 }
@@ -444,14 +528,33 @@ unsafe extern "system" fn keyboard(code: i32, wp: WPARAM, lp: LPARAM) -> LRESULT
     if code >= 0 {
         let key = &*(lp as *const KBDLLHOOKSTRUCT);
         if key.flags & LLKHF_INJECTED == 0 || key.dwExtraInfo != 0x4C464C4F {
-            if key.vkCode != VK_F12 as u32 && (wp as u32 == WM_KEYDOWN || wp as u32 == WM_SYSKEYDOWN) {typing::user_activity();}
-            if key.vkCode == VK_F12 as u32 {
-                if wp as u32 == WM_KEYDOWN || wp as u32 == WM_SYSKEYDOWN { F12_DOWN.store(true, Ordering::Relaxed); }
-                else if (wp as u32 == WM_KEYUP || wp as u32 == WM_SYSKEYUP) && F12_DOWN.swap(false, Ordering::Relaxed) {
-                    PostMessageW(HWND_ATOMIC.load(Ordering::Relaxed) as HWND, TOGGLE, GetForegroundWindow() as WPARAM, 0);
-                } return 1;
+            let down=wp as u32==WM_KEYDOWN || wp as u32==WM_SYSKEYDOWN;
+            let up=wp as u32==WM_KEYUP || wp as u32==WM_SYSKEYUP;
+            let modifier=hotkeys::modifier(key.vkCode,down);
+            let dictation=hotkeys::DICTATION.load(Ordering::Relaxed);
+            let language=hotkeys::LANGUAGE.load(Ordering::Relaxed);
+            let candidate=key.vkCode==dictation&255 || key.vkCode==language&255;
+            if candidate && hotkeys::capture_active() {
+                F12_DOWN.store(false,Ordering::Relaxed);LANGUAGE_DOWN.store(false,Ordering::Relaxed);
+                return CallNextHookEx(std::ptr::null_mut(),code,wp,lp);
             }
-            if key.vkCode == VK_ESCAPE as u32 && wp as u32 == WM_KEYDOWN && RECORDING.load(Ordering::Relaxed) {
+            if candidate {
+                if down {
+                    let chord=(hotkeys::modifiers()<<8)|key.vkCode;
+                    if chord==dictation {F12_DOWN.store(true,Ordering::Relaxed);return 1;}
+                    if chord==language {LANGUAGE_DOWN.store(true,Ordering::Relaxed);return 1;}
+                    if F12_DOWN.load(Ordering::Relaxed)||LANGUAGE_DOWN.load(Ordering::Relaxed) {return 1;}
+                } else if up {
+                    if key.vkCode==dictation&255 && F12_DOWN.swap(false,Ordering::Relaxed) {
+                        PostMessageW(HWND_ATOMIC.load(Ordering::Relaxed) as HWND,TOGGLE,GetForegroundWindow() as WPARAM,0);return 1;
+                    }
+                    if key.vkCode==language&255 && LANGUAGE_DOWN.swap(false,Ordering::Relaxed) {
+                        PostMessageW(HWND_ATOMIC.load(Ordering::Relaxed) as HWND,LANGUAGE,0,0);return 1;
+                    }
+                }
+            }
+            if !modifier && down {typing::user_activity();}
+            if key.vkCode == VK_ESCAPE as u32 && down && RECORDING.load(Ordering::Relaxed) && !hotkeys::capture_active() {
                 PostMessageW(HWND_ATOMIC.load(Ordering::Relaxed) as HWND, CANCEL, 0, 0); return 1;
             }
         }
@@ -470,7 +573,15 @@ unsafe extern "system" fn window_proc(hwnd: HWND, message: u32, wp: WPARAM, lp: 
             WM_ERASEBKGND => return 1,
             WM_TIMER => { app.tick(); return 0; }
             TOGGLE => { app.toggle(wp as HWND); return 0; }
+            LANGUAGE => {app.request_picker();return 0;}
             CANCEL => { app.stop(true); return 0; }
+            WM_LBUTTONUP if app.picker => {
+                let x=(lp as u32&0xffff) as i16 as i32;let y=((lp as u32>>16)&0xffff) as i16 as i32;
+                if let Some(index)=app.display.option_at(x,y) {app.choose_language(["en","id","both"][index]);}return 0;
+            }
+            WM_MOUSEMOVE if app.picker => {
+                app.display.hovered=app.display.option_at((lp as u32&0xffff) as i16 as i32,((lp as u32>>16)&0xffff) as i16 as i32);return 0;
+            }
             TRAY => { if lp as u32 == WM_RBUTTONUP || lp as u32 == WM_LBUTTONUP { app.menu(); } return 0; }
             QUIT | WM_CLOSE => {
                 app.input.invalidate(app.session+1);
@@ -518,6 +629,24 @@ fn main() {
             }
         }
         let settings = Settings::load(&data);
+        if args.iter().any(|arg|arg=="--settings") {
+            let bundled=root.join("runtime/settings/TranscribrSettings.exe");
+            let mut command=if bundled.is_file() {Command::new(bundled)} else {
+                let mut python=Command::new(root.join(".venv/Scripts/pythonw.exe"));python.arg(root.join("settings_window.py"));python
+            };
+            if args.iter().any(|arg|arg=="--shortcuts") {command.arg("--shortcuts");}
+            if command.current_dir(&root).env("TRANSCRIBR_ROOT",&root).creation_flags(0x08000000).spawn().is_err() {std::process::exit(1);}
+            return;
+        }
+        if let Some(index)=args.iter().position(|arg|arg=="--set-hotkeys") {
+            let dictation=args.get(index+1).and_then(|v|v.parse::<u32>().ok()).unwrap_or(0);
+            let language=args.get(index+2).and_then(|v|v.parse::<u32>().ok()).unwrap_or(0);
+            if !hotkeys::pair(dictation,language) {std::process::exit(2);}
+            let value=Settings{dictation_hotkey:dictation,language_hotkey:language,..settings};
+            let temporary=data.join("settings.tmp");
+            if fs::write(&temporary,serde_json::to_vec_pretty(&value).unwrap()).is_err() || fs::rename(temporary,data.join("settings.json")).is_err() {std::process::exit(1);}
+            return;
+        }
         let _ = fs::write(data.join("settings.json"), serde_json::to_vec_pretty(&settings).unwrap());
         if args.iter().any(|a| a == "--enable-startup") { set_startup(&root, true); return; }
         if args.iter().any(|a| a == "--check-mic") {
@@ -538,7 +667,8 @@ fn main() {
             };
             let _ = fs::write(data.join("microphone-check.json"), result.to_string()); return;
         }
-        let mutex = CreateMutexW(std::ptr::null(), 0, wide("Local\\LocalFlow.Dictation.v1").as_ptr());
+        let mutex_name=if args.iter().any(|a|a=="--preview-language-panel") {format!("Local\\Transcribr.PanelPreview.{}",std::process::id())} else {"Local\\LocalFlow.Dictation.v1".into()};
+        let mutex = CreateMutexW(std::ptr::null(), 0, wide(&mutex_name).as_ptr());
         if GetLastError() == ERROR_ALREADY_EXISTS { CloseHandle(mutex); return; }
         let test_samples = args.iter().position(|a| a == "--test-pcm").and_then(|i| args.get(i+1)).map(|path| {
             fs::read(path).unwrap().chunks_exact(2).map(|b| i16::from_le_bytes([b[0],b[1]])).collect::<Vec<_>>() });
@@ -551,6 +681,13 @@ fn main() {
         let mut app = Box::new(App::new(root, data, hwnd, test_samples));
         app.test_target = args.iter().position(|a| a == "--test-target").and_then(|i| args.get(i+1)).and_then(|s| s.parse().ok());
         APP = &mut *app;
+        if args.iter().any(|arg|arg=="--preview-language-panel") {
+            app.display.set_picker(true);app.display.selected=0;app.display.recording=true;app.display.cue("");app.display.show("","");
+            for _ in 0..45 {app.display.animate();std::thread::sleep(Duration::from_millis(16));}
+            app.display.hide();for _ in 0..24 {app.display.animate();std::thread::sleep(Duration::from_millis(16));}
+            Shell_NotifyIconW(NIM_DELETE,&app.tray);DestroyWindow(hwnd);APP=std::ptr::null_mut();CloseHandle(mutex);return;
+        }
+        hotkeys::initialize();
         let hook = SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard), instance, 0);
         if hook.is_null() { app.log("F12 hook failed"); app.status("error"); return; }
         let mouse_hook=SetWindowsHookExW(WH_MOUSE_LL,Some(mouse),instance,0);

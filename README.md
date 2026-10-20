@@ -18,7 +18,8 @@ See the [strengths, weaknesses, and Wispr Flow comparison report](docs/WISPR-FLO
 
 ## Features
 
-- **English** or **Indonesian** — select one language in the Windows notification-area menu; it stays fixed for the recording
+- **English**, **Indonesian**, or **Both** — use the Windows F11 picker by voice or mouse; fixed modes stay locked, and Both limits automatic selection to English/Indonesian
+- **Custom keyboard shortcuts** — F12 for dictation and F11 for language by default; assign your own keys or modifier combinations during setup or from Tray → Keyboard shortcuts
 - **Voice typing across apps** — dictate into supported browser, messaging, document, and other editable fields
 - **Live phrase output** — text arrives in short phrases while speaking; pauses and stopping finish the remaining words
 - **Spoken corrections** — repeat a recent sentence with a small change to replace it, or say `Correction, Tuesday` / `Ralat, Selasa` to correct the last dictated word
@@ -51,7 +52,7 @@ CPU mode is supported, but the large model can be substantially slower. Cold sta
 1. Open [Releases](https://github.com/AlthafTM/transcribr/releases) and download **`Transcribr-<version>-Setup.exe`**
 2. Open it, choose an installation folder, optionally enable **Start Transcribr when I sign in to Windows**, and click **Install**
 3. Wait while setup installs the private runtime and downloads/verifies the speech model (about 1.6 GB)
-4. Open **Transcribr** from Start, choose **English only** or **Indonesian only** in the tray menu, click a text field, and press **F12**
+4. Open **Transcribr** from Start, press **F11** to choose a language, click a text field, and press **F12** (or your chosen shortcuts)
 
 The installer includes Python, speech libraries, the settings UI, and NVIDIA runtime libraries. It installs for your Windows user without changing system Python or requiring Rust/build tools. GPU acceleration is selected automatically when a compatible NVIDIA GPU and working driver are available; CPU fallback remains supported. After setup, dictation is local and works offline.
 
@@ -104,7 +105,7 @@ Setup builds the native controller if `Transcribr.exe` is missing. Use `-Rebuild
 ## How to use
 
 1. Launch Transcribr; find the five-bar icon in the Windows notification area, possibly under the hidden-icons arrow
-2. Click the tray icon and choose **English only** or **Indonesian only**
+2. Press **F11** and click **English**, **Indonesia**, or **Both**, or say “English”, “Indonesia”, or “Both English and Indonesian”
 3. Click the message box, document, or other editable field where you want the words
 4. Press **F12** once and speak normally; the waveform opens and responds to your microphone
 5. Press **F12** again to stop the microphone and finish the last phrase
@@ -112,12 +113,16 @@ Setup builds the native controller if `Transcribr.exe` is missing. Use `-Rebuild
 | Control | Action |
 | --- | --- |
 | F12 | Start or stop recording |
+| F11 | Open / close the voice-and-mouse language picker |
 | Esc | Cancel unfinished speech; text already inserted stays |
 | Tray icon | Language, history/settings, startup, and quit |
 | History & settings | Copy transcripts, clear history, edit vocabulary, accuracy, cleanup, and startup |
+| Keyboard shortcuts | Click a shortcut, press your preferred key/combination, then save |
 | `Stop Transcribr.ps1` | Stop the installed controller from PowerShell |
 
-The selected language is fixed for each recording. Automatic language detection, translation, and mixed-language dictation are not supported modes. Change the language before starting a new recording.
+These are the default Windows shortcuts; setup and **Tray → Keyboard shortcuts** let you change them. A **Transcribr Settings** Start-menu launcher also opens the editor, with a shortcuts control at its bottom left. Esc cancels shortcut capture; duplicate assignments and modifier-only shortcuts are rejected. Windows-reserved shortcuts may be unavailable, and assigning a normal typing key consumes that key globally while Transcribr runs.
+
+**English** and **Indonesian** modes stay locked for the recording. **Both** enables local per-segment language selection with candidates restricted to English and Indonesian; it does not translate. Rapid switching within a sentence can still be less reliable than a fixed mode. Pressing the language shortcut during dictation finishes the current phrase before opening the picker. Picker speech is used only for language commands, never inserted or saved as a dictation. Click an option if a voice command is unclear. The picker closes after 30 seconds or when you press F11/Esc. After choosing, press F12 to start dictation. The F11 picker and custom Windows shortcuts are part of the Windows controller; the experimental Mac/Linux frontend keeps its separately documented controls.
 
 ### Choose a local AI model
 
