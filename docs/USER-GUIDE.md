@@ -74,7 +74,7 @@ Setup builds the native controller if `Dictately.exe` is missing. Use `-Rebuild`
 
 ## How to use
 
-1. Launch Dictately; find the D-shaped waveform icon in the Windows notification area, possibly under the hidden-icons arrow
+1. Launch Dictately; find the waveform icon in the Windows notification area, possibly under the hidden-icons arrow
 2. Use your language-selection shortcut and click **English**, **Indonesia**, or **Both**, or say “English”, “Indonesia”, or “Both English and Indonesian”
 3. Click the message box, document, or other editable field where you want the words
 4. Use your dictation shortcut once and speak normally; the waveform opens and responds to your microphone

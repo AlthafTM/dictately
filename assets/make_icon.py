@@ -1,4 +1,4 @@
-"""Generate Dictately's D-shaped waveform with soft reflected light."""
+"""Generate Dictately's left-peaking waveform with soft reflected light."""
 from pathlib import Path
 import math
 from PIL import Image, ImageDraw, ImageFilter
@@ -28,7 +28,7 @@ glow = ImageChops.add(wide_glow,near_glow)
 image.paste(gradient,(0,0),ImageChops.multiply(glow,outer))
 image.paste(gradient,(0,0),rim)
 bars = Image.new('L',(size,size)); draw=ImageDraw.Draw(bars)
-for center,height in zip((274,393,512,631,750),(550,518,446,334,170)):
+for center,height in zip((274,393,512,631,750),(244,550,446,334,170)):
     draw.rounded_rectangle((center-35,512-height//2,center+35,512+height//2),radius=35,fill=255)
 # Subtle glow behind the sharp waveform keeps small icons legible.
 halo=bars.filter(ImageFilter.GaussianBlur(22)).point(lambda a:round(a*.30))
