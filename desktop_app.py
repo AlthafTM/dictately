@@ -56,6 +56,23 @@ class PhraseBuffer:
         del self.samples[:samples * 2]
 
 
+class SpeechSession:
+    """Reuse model weights, but reset phrase agreement after every new F12 session."""
+    def __init__(self, model_root, factory=None):
+        self.model_root=model_root; self.factory=factory; self.worker=None; self.session=None
+
+    def recognize(self, token, request):
+        if self.worker is None:
+            if self.factory is None:
+                from live_worker import Worker
+                self.factory=Worker
+            self.worker=self.factory(model_root=self.model_root)
+        if token!=self.session:
+            self.worker.process({'command':'prepare','id':0})
+            self.session=token
+        return self.worker.process(request)
+
+
 def install_model(name):
     """Download to user storage, never inside a read-only launcher bundle."""
     from huggingface_hub import HfApi, snapshot_download
@@ -130,7 +147,7 @@ def start_hotkey(toggle, cancel):
     return [thread, listener]
 
 
-def run_desktop(smoke=False):
+def run_desktop(smoke=False, probe=None):
     import numpy as np
     import sounddevice as sd
     from PySide6.QtCore import Qt, QTimer, QRectF, QLockFile
@@ -194,7 +211,7 @@ def run_desktop(smoke=False):
             self.history = read_json(data / "desktop-history.json", [])
             self.events = queue.Queue(); self.audio = queue.Queue(maxsize=400)
             self.pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="speech")
-            self.future = None; self.worker = None; self.stream = None
+            self.future = None; self.speech = SpeechSession(data); self.stream = None
             self.recording = False; self.finishing = False; self.starting = False
             self.mic_closing = False
             self.session = 0; self.request = 0; self.target = None; self.blocked = False
@@ -270,11 +287,6 @@ def run_desktop(smoke=False):
             if not (self.recording or self.starting or self.finishing):return
             self.stop(); self.session += 1; self.finishing=False; self.buffer=PhraseBuffer()
             if self.transcript:self.save_history()
-        def recognize(self, request):
-            if self.worker is None:
-                from live_worker import Worker
-                self.worker=Worker(model_root=data)
-            return self.worker.process(request)
         def tick(self):
             try:self._tick()
             except Exception as error:
@@ -331,7 +343,7 @@ def run_desktop(smoke=False):
                              'samples':frombuffer(self.buffer.snapshot(),dtype='<i2'),'final':self.finishing,
                              'flush':time.monotonic()-self.last_voice>.9}
                     token=self.session
-                    self.future=self.pool.submit(lambda req=request,session=token:(session,self.recognize(req)))
+                    self.future=self.pool.submit(lambda req=request,session=token:(session,self.speech.recognize(session,req)))
                     self.future.speech=True
         def save_history(self):
             if self.transcript:
@@ -360,8 +372,12 @@ def run_desktop(smoke=False):
 
     try:
         controller=Controller()
-        if smoke:
+        if probe is not None:
+            probe(controller,app)
+        elif smoke:
             controller.window.open()
+            if os.environ.get('TRANSCRIBR_SMOKE_IMAGE'):
+                QTimer.singleShot(250,lambda:controller.window.grab().save(os.environ['TRANSCRIBR_SMOKE_IMAGE']))
             QTimer.singleShot(300,controller.window.close_wave)
             QTimer.singleShot(650,app.quit)
         app.exec()

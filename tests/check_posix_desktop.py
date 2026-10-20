@@ -54,8 +54,11 @@ def main():
     if '--x11' in sys.argv:
         x11_routing();return
     with tempfile.TemporaryDirectory() as temporary:
-        env=dict(os.environ,LOCALFLOW_DATA=temporary,QT_QPA_PLATFORM='offscreen')
+        image=ROOT/'qa/desktop-waveform.png';image.parent.mkdir(exist_ok=True)
+        env=dict(os.environ,LOCALFLOW_DATA=temporary,QT_QPA_PLATFORM='offscreen',TRANSCRIBR_SMOKE_IMAGE=str(image))
         subprocess.run([sys.executable,str(ROOT/'desktop_app.py'),'--smoke-test'],env=env,check=True,timeout=30)
+        assert image.is_file()
+        subprocess.run([sys.executable,str(ROOT/'tests/check_desktop_lifecycle.py')],env=env,check=True,timeout=30)
         if sys.platform=='linux':
             env.pop('QT_QPA_PLATFORM',None);env.pop('WAYLAND_DISPLAY',None);env['XDG_SESSION_TYPE']='x11'
             subprocess.run(['xvfb-run','-a','sh','-c','openbox >/dev/null 2>&1 & exec "$@"','--',sys.executable,__file__,'--x11'],env=env,check=True,timeout=30)

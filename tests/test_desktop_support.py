@@ -6,11 +6,20 @@ import unittest
 from unittest.mock import patch
 
 import desktop_support
-from desktop_app import PhraseBuffer
+from desktop_app import PhraseBuffer, SpeechSession
 from runtime_paths import user_data_dir
 
 
 class DesktopTests(unittest.TestCase):
+    def test_new_recording_resets_agreement_without_reloading_model(self):
+        calls=[];created=[]
+        class Worker:
+            def __init__(self,**kwargs):created.append(kwargs)
+            def process(self,request):calls.append(request['command']);return {'type':'result'}
+        speech=SpeechSession(Path('model-storage'),factory=Worker)
+        for token in (1,1,2):speech.recognize(token,{'command':'recognize'})
+        self.assertEqual(len(created),1)
+        self.assertEqual(calls,['prepare','recognize','recognize','prepare','recognize'])
     def test_decode_consumption_keeps_new_microphone_audio(self):
         buffer=PhraseBuffer();buffer.append(b'\x01\x00'*32000)
         self.assertEqual(len(buffer.snapshot()),64000)
