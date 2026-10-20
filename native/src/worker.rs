@@ -26,9 +26,14 @@ struct Process { child: Child, input: ChildStdin, output: BufReader<ChildStdout>
 impl Process {
     fn start(root: &PathBuf, data: &PathBuf) -> Result<Self, String> {
         let log = OpenOptions::new().create(true).append(true).open(data.join("live-worker.log")).map_err(|e| e.to_string())?;
-        let mut child = Command::new(root.join(".venv/Scripts/python.exe")).arg(root.join("live_worker.py"))
+        let bundled = root.join("runtime/worker/TranscribrWorker.exe");
+        let mut command = if bundled.is_file() { Command::new(bundled) } else {
+            let mut python = Command::new(root.join(".venv/Scripts/python.exe"));
+            python.arg(root.join("live_worker.py")); python
+        };
+        let mut child = command
             .current_dir(root).creation_flags(0x08000000).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(log)
-            .env("PYTHONIOENCODING", "utf-8").env("LOCALFLOW_DATA", data).spawn().map_err(|e| e.to_string())?;
+            .env("PYTHONIOENCODING", "utf-8").env("TRANSCRIBR_ROOT", root).env("LOCALFLOW_DATA", data).spawn().map_err(|e| e.to_string())?;
         unsafe {
             let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
             let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();

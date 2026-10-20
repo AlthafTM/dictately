@@ -1,5 +1,34 @@
 # Development and testing
 
+## Build the Windows installer
+
+The installer is a per-user Windows setup executable. It bundles independent on-directory Python runtimes for inference and settings, including CUDA libraries, rather than depending on the user's Python installation. The application controller remains Rust. Setup uses the .NET Framework compiler included with Windows; no separate installer authoring tool is required.
+
+```powershell
+# After setting up the source environment and native build tools
+.\build-installer.ps1
+# Reuse already-built runtimes while iterating on installer UI/docs
+.\build-installer.ps1 -SkipFreeze
+```
+
+Output: `dist/Transcribr-<version>-Setup.exe` and `.exe.sha256`. The checked-in `installer/runtime.spec` controls PyInstaller collection; `assets/package-files.json` is the app-file allowlist shared by ZIP and installer packaging. The installer contains the runtime but downloads the verified Turbo weights on first installation. PyInstaller builds are on-directory, avoiding per-launch extraction overhead.
+
+Setup offers a folder picker, optional sign-in startup, and optional launch. It creates a Start menu shortcut and a per-user Installed Apps entry. Installation folders must be empty or have the matching Transcribr ownership marker. A marker tracks installed files for repair/uninstall; uninstallation preserves the separate `%LOCALAPPDATA%/Transcribr` settings/history. The optional model-removal path rejects linked directories. Future signing/update support remains separate work.
+
+For automated validation in a **new disposable folder**, the installer accepts:
+
+```powershell
+.\dist\Transcribr-0.6.0-Setup.exe --silent --dir "C:\path\to\disposable-install" --no-launch --no-startup
+```
+
+`--model-cache "C:\path\to\verified-Turbo-files"` allows an offline/cached setup test. Each source model file is checked against the pinned SHA-256 manifest before copying; the normal downloader verifies it again. This does not skip integrity checks. `--preview "C:\path\to\preview.png"` renders the setup window without installation.
+
+Test install, frozen CUDA/CPU inference, native controller startup, settings UI startup, repair, and uninstall in that folder. Preserve/restore any existing Start menu shortcut and startup/Installed Apps registry values during local tests; an installer intentionally manages those per-user entries. Never point an uninstall test at a source checkout. A clean-folder test on the development device does not replace a fresh Windows VM test.
+
+Installed model selection can use `runtime/worker/TranscribrWorker.exe --select-model <turbo|small|large-v3>`. `--self-check` loads the selected local model and reports the backend, without recording or typing. The worker protocol remains compatible with the source installation.
+
+## Source development checks
+
 Run source-build commands from Developer PowerShell for Visual Studio with Rust, the Windows SDK, and Python 3.12 installed. Alternatively use a GNU Rust toolchain with windres. Project-local toolchains are optional; the build wrapper detects them when available.
 
 ```powershell

@@ -88,7 +88,7 @@ impl App {
         }
     }
     fn status(&self, state: &str) {
-        let value = json!({"pid": std::process::id(), "state": state, "version":"0.5.0", "speech_model":self.speech_model, "app":"Transcribr", "hwnd":self.display.hwnd as usize,
+        let value = json!({"pid": std::process::id(), "state": state, "version":env!("CARGO_PKG_VERSION"), "speech_model":self.speech_model, "app":"Transcribr", "hwnd":self.display.hwnd as usize,
             "at_unix":unix(), "live_commits":self.inserted, "language":self.settings.language, "worker_loaded":self.worker_loaded,
             "engine_ready":self.worker_loaded && !self.inflight, "editor_locked":self.editor_locked, "pending_characters":self.pending.chars().count(),
             "microphone_ready":self.capture.is_some() || self.test_samples.is_some(), "microphone_starting":self.mic_starting,
@@ -403,8 +403,12 @@ impl App {
         }
     }
     fn open_settings(&self) {
-        let _ = Command::new(self.root.join(".venv/Scripts/pythonw.exe")).arg(self.root.join("settings_window.py"))
-            .current_dir(&self.root).creation_flags(0x08000000).spawn();
+        let bundled = self.root.join("runtime/settings/TranscribrSettings.exe");
+        let mut command = if bundled.is_file() { Command::new(bundled) } else {
+            let mut python = Command::new(self.root.join(".venv/Scripts/pythonw.exe"));
+            python.arg(self.root.join("settings_window.py")); python
+        };
+        let _ = command.current_dir(&self.root).env("TRANSCRIBR_ROOT", &self.root).creation_flags(0x08000000).spawn();
     }
 }
 
@@ -483,6 +487,19 @@ fn main() {
     unsafe {
         windows_sys::Win32::UI::HiDpi::SetProcessDpiAwarenessContext(windows_sys::Win32::UI::HiDpi::DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
         let args: Vec<String> = std::env::args().collect();
+        if args.iter().any(|arg| arg == "--quit-running") {
+            let window = FindWindowW(wide("TranscribrNativeOverlay").as_ptr(), std::ptr::null());
+            if !window.is_null() {
+                let mut pid = 0; GetWindowThreadProcessId(window, &mut pid);
+                let process = OpenProcess(0x00100000, 0, pid); // SYNCHRONIZE only
+                if process.is_null() { std::process::exit(1); }
+                let posted = PostMessageW(window, QUIT, 0, 0);
+                let stopped = posted != 0 && WaitForSingleObject(process, 10000) == WAIT_OBJECT_0;
+                CloseHandle(process);
+                if !stopped { std::process::exit(1); }
+            }
+            return;
+        }
         if args.iter().any(|arg| arg == "--check-input") {
             let typer = typing::Typer::new();
             let result = json!({"captured":typer.capture(std::ptr::null_mut()).is_some(), "diagnostic":typer.diagnostic()});

@@ -14,6 +14,8 @@ Transcribr uses these independently licensed components. Source links are provid
 | Serde / serde_json | Local configuration and worker protocol | MIT or Apache-2.0; [source](https://github.com/serde-rs/serde) |
 | NVIDIA CUDA libraries | Optional GPU inference | NVIDIA terms; [CUDA](https://developer.nvidia.com/cuda-toolkit), [cuDNN](https://developer.nvidia.com/cudnn) |
 | Pillow | Development-only icon generation | HPND; [source](https://github.com/python-pillow/Pillow) |
+| Python | Private installer runtime | PSF license; bundled runtime notices in `licenses/runtime` |
+| PyInstaller | Build tooling and runtime bootloader | GPL with distribution exception; [license](https://pyinstaller.org/en/stable/license.html) |
 
 Python packages install into the recipient's private environment with their own notices. GPU libraries and model weights are not included in the Git repository or release ZIP. No rights to third-party software are granted beyond their respective licenses.
 

@@ -1,0 +1,9 @@
+[
+  "Transcribr.exe", "Start Transcribr.vbs", "Stop Transcribr.ps1", "setup.ps1",
+  "live_worker.py", "engine.py", "settings_window.py", "download_turbo.py",
+  "speech_models.py", "select_model.py", "worker_protocol.py", "runtime_paths.py",
+  "requirements.txt", "requirements-gpu.txt", "README.md", "THIRD_PARTY.md",
+  "assets/transcribr.ico", "assets/transcribr.png", "assets/speech-model.json",
+  "licenses/faster-whisper-LICENSE", "docs/DEVELOPMENT.md", "docs/AI-MODELS.md",
+  "docs/WISPR-FLOW-COMPARISON.md"
+]

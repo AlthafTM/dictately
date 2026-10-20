@@ -9,18 +9,10 @@ if (-not (Test-Path -LiteralPath Transcribr.exe)) {throw 'Build Transcribr.exe f
 $version = ((Get-Content native\Cargo.toml | Select-String '^version = "([^"]+)"').Matches[0].Groups[1].Value)
 $stage = Join-Path $PSScriptRoot ('dist\stage-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $stage,"$stage\assets","$stage\licenses","$stage\docs" -Force | Out-Null
-foreach ($name in @('Transcribr.exe','Start Transcribr.vbs','Stop Transcribr.ps1','setup.ps1','live_worker.py','engine.py','settings_window.py','download_turbo.py','requirements.txt','requirements-gpu.txt','README.md','THIRD_PARTY.md')) {
-    Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $stage
-}
-foreach ($name in @('transcribr.ico','transcribr.png','speech-model.json')) {
-    Copy-Item -LiteralPath (Join-Path "$PSScriptRoot\assets" $name) -Destination "$stage\assets"
-}
-Copy-Item -LiteralPath "$PSScriptRoot\licenses\faster-whisper-LICENSE" -Destination "$stage\licenses"
-Copy-Item -LiteralPath "$PSScriptRoot\docs\DEVELOPMENT.md" -Destination "$stage\docs"
-Copy-Item -LiteralPath "$PSScriptRoot\docs\AI-MODELS.md" -Destination "$stage\docs"
-Copy-Item -LiteralPath "$PSScriptRoot\docs\WISPR-FLOW-COMPARISON.md" -Destination "$stage\docs"
-foreach ($name in @('speech_models.py','select_model.py','worker_protocol.py')) {
-    Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $stage
+foreach ($name in (Get-Content "$PSScriptRoot\assets\package-files.json" -Raw | ConvertFrom-Json)) {
+    $destination = Join-Path $stage $name
+    New-Item -ItemType Directory -Path (Split-Path $destination) -Force | Out-Null
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $destination
 }
 $archive = Join-Path $PSScriptRoot "dist\Transcribr-$version-windows-x64.zip"
 Compress-Archive -Path "$stage\*" -DestinationPath $archive -Force

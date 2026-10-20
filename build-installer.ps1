@@ -1,0 +1,43 @@
+param([switch]$SkipFreeze)
+$ErrorActionPreference = 'Stop'
+Set-Location -LiteralPath $PSScriptRoot
+$python = Join-Path $PSScriptRoot '.venv\Scripts\python.exe'
+if (-not (Test-Path -LiteralPath $python)) { throw 'Run setup.ps1 first to create the build environment' }
+if (-not $SkipFreeze) {
+    & $python -m pip install -r requirements-installer.txt
+    if ($LASTEXITCODE -ne 0) { throw 'Installer build dependencies failed' }
+    & $python -m PyInstaller --noconfirm --distpath dist\frozen --workpath .tools\freeze-build installer\runtime.spec
+    if ($LASTEXITCODE -ne 0) { throw 'Private runtime build failed' }
+}
+& "$PSScriptRoot\build-native.ps1" build --release --locked
+if ($LASTEXITCODE -ne 0) { throw 'Native build failed' }
+$version = ((Get-Content native\Cargo.toml | Select-String '^version = "([^"]+)"').Matches[0].Groups[1].Value)
+$stage = Join-Path $PSScriptRoot ('dist\installer-stage-' + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $stage,"$stage\runtime" -Force | Out-Null
+$files = Get-Content assets\package-files.json -Raw | ConvertFrom-Json
+foreach ($name in $files) {
+    $destination = Join-Path $stage $name
+    New-Item -ItemType Directory -Path (Split-Path $destination) -Force | Out-Null
+    $source = if ($name -eq 'Transcribr.exe') { 'native\target\release\transcribr.exe' } else { $name }
+    Copy-Item -LiteralPath $source -Destination $destination -Force
+}
+Copy-Item -LiteralPath dist\frozen\TranscribrWorker -Destination "$stage\runtime\worker" -Recurse
+Copy-Item -LiteralPath dist\frozen\TranscribrSettings -Destination "$stage\runtime\settings" -Recurse
+$compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
+if (-not (Test-Path -LiteralPath $compiler)) { throw 'The Windows .NET Framework C# compiler is required' }
+$compilerArgs = @('/nologo','/target:winexe','/platform:x64','/optimize+','/codepage:65001',
+    '/reference:System.Windows.Forms.dll','/reference:System.Drawing.dll','/reference:System.Core.dll',
+    '/reference:System.IO.Compression.dll','/reference:System.IO.Compression.FileSystem.dll',
+    '/win32manifest:installer\setup.manifest','/win32icon:assets\transcribr.ico')
+& $compiler @compilerArgs /define:UNINSTALLER "/out:$stage\Uninstall Transcribr.exe" installer\Setup.cs
+if ($LASTEXITCODE -ne 0) { throw 'Uninstaller compilation failed' }
+& $python installer\make_payload.py $stage
+if ($LASTEXITCODE -ne 0) { throw 'Payload creation failed' }
+$payload = Join-Path $stage 'payload.zip'
+$installer = Join-Path $PSScriptRoot "dist\Transcribr-$version-Setup.exe"
+& $compiler @compilerArgs "/resource:$payload,Transcribr.payload.zip" "/out:$installer" installer\Setup.cs
+if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed' }
+$hash = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLower()
+"$hash  $([IO.Path]::GetFileName($installer))" | Set-Content -LiteralPath "$installer.sha256" -Encoding ascii
+Write-Host "Installer: $installer"
+Write-Host "Stage: $stage"

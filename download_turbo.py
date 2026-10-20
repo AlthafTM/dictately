@@ -6,9 +6,27 @@ from pathlib import Path
 import time
 import requests
 
-ROOT = Path(__file__).resolve().parent
+from runtime_paths import app_root
+ROOT = app_root()
 DEST = ROOT / "models/whisper-turbo"
 REPO = "dropbox-dash/faster-whisper-large-v3-turbo"
+
+def discard_verified_parts(destination):
+    """Remove only downloader-owned numeric fragments, after all hashes pass."""
+    parts = destination / "download-parts"
+    if not parts.exists() or parts.resolve().parent != destination.resolve():
+        return
+    chunks = parts / "chunks"
+    for directory, parent in ((chunks, parts), (parts, destination)):
+        if not directory.is_dir() or directory.resolve().parent != parent.resolve():
+            continue
+        for file in directory.iterdir():
+            if file.name.isdecimal() and file.is_file():
+                file.unlink()
+        try:
+            directory.rmdir()
+        except OSError:
+            pass  # Preserve unexpected files; never delete a whole arbitrary tree.
 
 def main():
     spec = json.loads((ROOT / "assets/speech-model.json").read_text(encoding="utf-8"))
@@ -22,6 +40,15 @@ def main():
             continue
         url = f"https://huggingface.co/{REPO}/resolve/{revision}/{name}?download=true"
         target = DEST / name
+        digest = None
+        expected = entry.get("lfs", {}).get("sha256")
+        if target.exists():
+            with target.open("rb") as stream:
+                digest = hashlib.file_digest(stream, "sha256").hexdigest()
+            if expected and digest != expected:
+                target.unlink()
+                digest = None
+                print(f"Repairing incomplete or invalid {name}", flush=True)
         if name == "model.bin" and not target.exists():
             size = entry["lfs"]["size"]
             step = 16 * 1024 * 1024
@@ -78,22 +105,31 @@ def main():
             count = (size + step - 1) // step
             with ThreadPoolExecutor(max_workers=16) as pool:
                 files = list(pool.map(part, range(count)))
-            with target.open("wb") as output:
+            temporary = target.with_suffix(".downloading")
+            with temporary.open("wb") as output:
                 for path in files:
                     output.write(path.read_bytes())
+            temporary.replace(target)
             print(f"Assembled {name}: {size / 1024**2:.0f} MiB", flush=True)
         elif not target.exists():
             response = requests.get(url, timeout=(20, 90))
             response.raise_for_status()
             target.write_bytes(response.content)
-        with target.open("rb") as stream:
-            digest = hashlib.file_digest(stream, "sha256").hexdigest()
-        expected = entry.get("lfs", {}).get("sha256")
+        if digest is None:
+            with target.open("rb") as stream:
+                digest = hashlib.file_digest(stream, "sha256").hexdigest()
         if expected and expected != digest:
+            target.unlink()
+            if name == "model.bin":
+                discard_verified_parts(DEST)
             raise RuntimeError(f"Digest mismatch: {name}")
         manifest.append({"repo": REPO, "revision": revision, "file": str(target.relative_to(ROOT)), "sha256": digest, "bytes": target.stat().st_size})
         print(f"Verified {name}", flush=True)
     (DEST / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    try:
+        discard_verified_parts(DEST)
+    except OSError as error:
+        print(f"Verified model is ready; temporary-file cleanup deferred: {error}", flush=True)
 
 if __name__ == "__main__":
     main()

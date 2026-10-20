@@ -14,21 +14,13 @@ import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-# Private DLL search paths: no driver changes and no machine-wide PATH edits.
-_dll_directories = []
-_dll_paths = []
-if os.name == "nt":
-    import site
-    for packages in site.getsitepackages():
-        for component in ("cublas", "cudnn", "cuda_nvrtc"):
-            directory = Path(packages) / "nvidia" / component / "bin"
-            if directory.is_dir():
-                _dll_directories.append(os.add_dll_directory(str(directory)))
-                _dll_paths.append(str(directory))
-    os.environ["PATH"] = os.pathsep.join(_dll_paths + [os.environ.get("PATH", "")])
+from runtime_paths import app_root, configure_gpu_libraries
+configure_gpu_libraries()
 
-sys.stdout.reconfigure(encoding="utf-8")
-sys.stdin.reconfigure(encoding="utf-8")
+if sys.stdout is not None:
+    sys.stdout.reconfigure(encoding="utf-8")
+if sys.stdin is not None:
+    sys.stdin.reconfigure(encoding="utf-8")
 from engine import Engine
 from speech_models import selected_model
 from worker_protocol import read_request
@@ -131,10 +123,10 @@ class Worker:
             from faster_whisper import WhisperModel
             import ctranslate2
             import numpy as np
-            model_dir = selected_model(Path(__file__).parent)
+            model_dir = selected_model(app_root())
             if os.environ.get("LOCALFLOW_MODEL") == "small":
                 model_dir = "whisper-small"
-            model_path = str(Path(__file__).parent / "models" / model_dir)
+            model_path = str(app_root() / "models" / model_dir)
             self.model_name = model_dir
             if not self.force_cpu and os.environ.get("LOCALFLOW_DEVICE") != "cpu" and ctranslate2.get_cuda_device_count() > 0:
                 try:

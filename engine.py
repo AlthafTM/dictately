@@ -14,7 +14,8 @@ import threading
 import time
 import urllib.request
 
-ROOT = Path(__file__).resolve().parent
+from runtime_paths import app_root
+ROOT = app_root()
 os.environ["HF_HUB_OFFLINE"] = "1"
 os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
 os.environ["DO_NOT_TRACK"] = "1"

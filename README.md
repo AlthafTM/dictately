@@ -35,8 +35,8 @@ See the [strengths, weaknesses, and Wispr Flow comparison report](docs/WISPR-FLO
 | --- | --- |
 | Operating system | Windows 10/11, 64-bit x86 |
 | Microphone | A working Windows recording device |
-| Python | Python 3.12, 64-bit, including the Python launcher and Tcl/Tk |
-| Storage | About 1.6 GB for model weights, plus Python dependencies; GPU libraries require additional space |
+| Runtime | Included in the installer; source/ZIP installations need Python 3.12, 64-bit, with the launcher and Tcl/Tk |
+| Storage | Allow at least 8 GB free during setup, including temporary downloads; the default speech weights are about 1.6 GB |
 | GPU | Optional compatible NVIDIA CUDA GPU and driver; the development configuration used an RTX 3050 with 6 GB VRAM |
 | Internet | Needed for initial dependency/model downloads; dictation runs offline afterward |
 
@@ -44,7 +44,20 @@ CPU mode is supported, but the large model can be substantially slower. Cold sta
 
 ## Download and install
 
-### From a Windows release package
+### Windows installer — recommended
+
+1. Open [Releases](https://github.com/AlthafTM/transcribr/releases) and download **`Transcribr-<version>-Setup.exe`**
+2. Open it, choose an installation folder, optionally enable **Start Transcribr when I sign in to Windows**, and click **Install**
+3. Wait while setup installs the private runtime and downloads/verifies the speech model (about 1.6 GB)
+4. Open **Transcribr** from Start, choose **English only** or **Indonesian only** in the tray menu, click a text field, and press **F12**
+
+The installer includes Python, speech libraries, the settings UI, and NVIDIA runtime libraries. It installs for your Windows user without changing system Python or requiring Rust/build tools. GPU acceleration is selected automatically when a compatible NVIDIA GPU and working driver are available; CPU fallback remains supported. After setup, dictation is local and works offline.
+
+Interrupted model downloads can be resumed by running setup again in the same folder. Setup keeps existing transcript history and settings. To uninstall, use **Windows Settings → Apps → Installed apps → Transcribr**, or open `Uninstall Transcribr.exe` in the app folder. Uninstall can remove downloaded models and keeps `%LOCALAPPDATA%\Transcribr` history/settings.
+
+The current installer is unsigned. See [installer build and validation](docs/DEVELOPMENT.md#build-the-windows-installer) for packaging details.
+
+### Manual ZIP installation
 
 When a build is available, open this repository's **Releases** page and download `Transcribr-<version>-windows-x64.zip` from **Assets**. Extract the entire archive to a permanent folder. Do not run the executable from inside the ZIP.
 
@@ -109,11 +122,14 @@ The selected language is fixed for each recording. Automatic language detection,
 Turbo is installed by default. For a smaller model or an accuracy-oriented Large-v3 experiment, quit the app, open PowerShell in its folder, and run **one** command:
 
 ```powershell
-.\.venv\Scripts\python.exe select_model.py small
-.\.venv\Scripts\python.exe select_model.py large-v3
+# Installer users: run one command from the app folder
+.\runtime\worker\TranscribrWorker.exe --select-model small
+.\runtime\worker\TranscribrWorker.exe --select-model large-v3
 # Restore the default
-.\.venv\Scripts\python.exe select_model.py turbo
+.\runtime\worker\TranscribrWorker.exe --select-model turbo
 ```
+
+Source/manual ZIP users use `.\.venv\Scripts\python.exe select_model.py <model>` instead. Detailed instructions for both are in the model guide.
 
 Wait for the download/selection to finish, then reopen `Start Transcribr.vbs`. All choices run locally and retain the English/Indonesian language controls. Larger models can increase latency and memory use; a better result is not guaranteed. See the [step-by-step AI model guide](docs/AI-MODELS.md) for choosing, installing, switching back, and developing other engine integrations.
 

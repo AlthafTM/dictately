@@ -25,7 +25,15 @@ On the development laptop (RTX 3050 6 GB, about 16 GB system RAM), Turbo is the 
    & '.\Stop Transcribr.ps1'
    ```
 
-3. Download and select **one** model using the private Python environment
+3. Download and select **one** model. **Installer users** use the included worker:
+
+   ```powershell
+   # Choose one
+   .\runtime\worker\TranscribrWorker.exe --select-model small
+   .\runtime\worker\TranscribrWorker.exe --select-model large-v3
+   ```
+
+   **Source/manual ZIP users** use the private Python environment instead:
 
    ```powershell
    # Smaller model
@@ -45,6 +53,10 @@ On the development laptop (RTX 3050 6 GB, about 16 GB system RAM), Turbo is the 
 Quit Transcribr, then run:
 
 ```powershell
+# Installer users
+.\runtime\worker\TranscribrWorker.exe --select-model turbo
+
+# Source/manual ZIP users, instead
 .\.venv\Scripts\python.exe select_model.py turbo
 ```
 

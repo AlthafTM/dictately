@@ -8,8 +8,9 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import winreg
 
-ROOT = Path(__file__).resolve().parent
-DATA = Path(os.environ["LOCALAPPDATA"]) / "Transcribr"
+from runtime_paths import app_root
+ROOT = app_root()
+DATA = Path(os.environ.get("LOCALFLOW_DATA", str(Path(os.environ["LOCALAPPDATA"]) / "Transcribr")))
 BG, CARD, FIELD, TEXT, MUTED, ACCENT = "#111111", "#1d1d1d", "#2a2a2a", "#f1f1f1", "#aaaaaa", "#e5e5e5"
 LANGUAGES = {"English only": "en", "Indonesian only": "id"}
 

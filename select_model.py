@@ -4,7 +4,8 @@ import json
 from pathlib import Path
 from speech_models import MODELS
 
-ROOT = Path(__file__).resolve().parent
+from runtime_paths import app_root
+ROOT = app_root()
 
 
 def main():
