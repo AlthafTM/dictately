@@ -1,6 +1,11 @@
 name: Windows installer
 on:
   workflow_dispatch:
+    inputs:
+      draft_tag:
+        description: 'Optional version tag for a draft release, for example v0.8.0'
+        required: false
+        type: string
   push:
     tags: ['v*']
 permissions:
@@ -12,6 +17,14 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+      - name: Validate optional draft version
+        if: inputs.draft_tag != ''
+        shell: pwsh
+        env:
+          DRAFT_TAG: ${{ inputs.draft_tag }}
+        run: |
+          $version = ((Get-Content native/Cargo.toml | Select-String '^version = "([^"]+)"').Matches[0].Groups[1].Value)
+          if ($env:DRAFT_TAG -ne "v$version") { throw 'Draft tag must match the application version' }
       - uses: dtolnay/rust-toolchain@stable
       - uses: ilammy/msvc-dev-cmd@v1
       - uses: actions/setup-python@v5
@@ -37,9 +50,12 @@ jobs:
             dist/Dictately-*-Setup.exe.sha256
           compression-level: 0
       - name: Publish tagged release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') || inputs.draft_tag != ''
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ inputs.draft_tag || github.ref_name }}
+          target_commitish: ${{ github.sha }}
+          draft: ${{ inputs.draft_tag != '' }}
           generate_release_notes: true
           files: |
             dist/Dictately-*-Setup.exe
