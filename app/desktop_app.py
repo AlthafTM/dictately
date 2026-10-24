@@ -230,6 +230,7 @@ def run_desktop(smoke=False, probe=None):
             self.future = None; self.speech = SpeechSession(data); self.stream = None
             self.recording = False; self.finishing = False; self.starting = False
             self.mic_closing = False
+            self.screenshot_paused=False;self.screenshot_resume=False;self.screenshot_process=None;self.screenshot_started=0.
             self.session = 0; self.request = 0; self.target = None; self.blocked = False
             self.buffer = PhraseBuffer(); self.transcript = ''; self.started = 0.; self.last_request = 0.
             self.last_toggle = 0.; self.level = 0.; self.last_audio = 0.; self.last_voice = 0.; self.last_injected = ''
@@ -265,6 +266,11 @@ def run_desktop(smoke=False, probe=None):
         def toggle(self):
             if time.monotonic()-self.last_toggle < .4: return
             self.last_toggle=time.monotonic()
+            if self.screenshot_paused:
+                self.screenshot_resume=False
+                if self.stream:
+                    stream=self.stream;self.stream=None;self.close_mic(stream)
+                return
             if self.finishing: return
             if self.recording or self.starting:
                 self.stop(); return
@@ -327,7 +333,7 @@ def run_desktop(smoke=False, probe=None):
             for _ in range(100):
                 try:token,pcm,dropout=self.audio.get_nowait()
                 except queue.Empty:break
-                if token!=self.session:continue
+                if token!=self.session or self.screenshot_paused:continue
                 if dropout:raise RuntimeError('Audio device dropped samples; check the microphone')
                 self.buffer.append(pcm)
                 samples=np.frombuffer(pcm,dtype='<i2').astype(np.float32)/32768
@@ -346,6 +352,12 @@ def run_desktop(smoke=False, probe=None):
                         self.close_mic(stream)
                 elif token==self.session:
                     self.buffer.consume(result.get('consumed',0))
+                    if result.get('action')=='screenshot':
+                        self.screenshot_resume=self.recording
+                        self.screenshot_paused=True;self.screenshot_started=time.monotonic()
+                        self.recording=False;self.finishing=False;self.buffer=PhraseBuffer()
+                        self.window.timer.stop();self.window.hide();self.window.progress=0.;self.window.goal=0.
+                        QTimer.singleShot(0,lambda token=self.session:self.take_screenshot(token))
                     text=result.get('cleaned','').strip()
                     if text:
                         prefix=' ' if self.transcript else ''
@@ -361,17 +373,38 @@ def run_desktop(smoke=False, probe=None):
                 count=len(self.buffer.samples)//2
                 if self.finishing and not count:
                     self.finishing=False;self.save_history()
-                elif count and (self.finishing or count>=32000 and time.monotonic()-self.last_request>=1.4):
+                elif count and (self.finishing or count>=(6400 if not self.transcript else 32000) and time.monotonic()-self.last_request>=(.25 if not self.transcript else 1.4)):
                     from numpy import frombuffer
                     self.request+=1;self.last_request=time.monotonic()
                     request={**self.session_settings,'command':'recognize','id':self.request,
                              'samples':frombuffer(self.buffer.snapshot(),dtype='<i2'),'final':self.finishing,
-                             'flush':time.monotonic()-self.last_voice>.9}
+                             'flush':time.monotonic()-self.last_voice>.9,'pause_seconds':time.monotonic()-self.last_voice}
                     token=self.session
                     self.future=self.pool.submit(lambda req=request,session=token:(session,self.speech.recognize(session,req)))
                     self.future.speech=True
-            interval=40 if self.recording or self.starting or self.finishing or self.mic_closing or self.future else 1000
+            interval=40 if self.recording or self.starting or self.finishing or self.mic_closing or self.future or self.screenshot_paused else 1000
             if self.timer.interval()!=interval:self.timer.setInterval(interval)
+        def take_screenshot(self,token):
+            if token!=self.session or self.recording:return
+            if self.window.isVisible():
+                QTimer.singleShot(50,lambda:self.take_screenshot(token));return
+            try:
+                from screen_capture import launch_screenshot
+                self.screenshot_process=launch_screenshot()
+                QTimer.singleShot(100,self.finish_screenshot)
+            except (OSError,RuntimeError) as error:
+                self.notice(str(error));self.finish_screenshot()
+        def finish_screenshot(self):
+            if self.screenshot_process and self.screenshot_process.poll() is None:
+                QTimer.singleShot(100,self.finish_screenshot);return
+            self.screenshot_process=None;self.screenshot_paused=False;self.buffer=PhraseBuffer()
+            while True:
+                try:self.audio.get_nowait()
+                except queue.Empty:break
+            if self.screenshot_resume and self.stream:
+                self.started+=time.monotonic()-self.screenshot_started
+                self.recording=True;self.last_voice=time.monotonic();self.level=0.;self.window.level=0.;self.window.open()
+            self.screenshot_resume=False
         def save_history(self):
             if self.transcript:
                 self.history.insert(0,{'at':datetime.now().isoformat(timespec='seconds'),'language':self.session_settings['language'],'text':self.transcript})

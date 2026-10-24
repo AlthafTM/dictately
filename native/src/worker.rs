@@ -1,9 +1,17 @@
 use std::{fs::OpenOptions, io::{BufRead, BufReader, Write}, os::windows::{io::AsRawHandle, process::CommandExt}, path::PathBuf,
-    process::{Child, ChildStdin, ChildStdout, Command, Stdio}, sync::mpsc::{self, Receiver, Sender}};
+    process::{Child, ChildStdin, ChildStdout, Command, Stdio}, sync::{mpsc::{self, Receiver, Sender},Arc,atomic::{AtomicU64,Ordering}}};
 use serde_json::{json, Value};
 use windows_sys::Win32::{Foundation::{CloseHandle, HANDLE}, System::JobObjects::*};
 
 pub enum Work { Request(u64, Value, Option<Vec<i16>>), Unload }
+pub struct Requests {sender:Sender<Work>,latest:Arc<AtomicU64>}
+impl Requests {
+    pub fn send(&self,work:Work)->Result<(),mpsc::SendError<Work>> {
+        if let Work::Request(session,_,_)=&work {self.latest.store(*session,Ordering::Release);}
+        self.sender.send(work)
+    }
+    pub fn cancel_before(&self,session:u64) {self.latest.store(session,Ordering::Release);}
+}
 pub struct Event { pub session: u64, pub value: Value }
 
 fn write_request(output: &mut impl Write, metadata: &Value, samples: Option<&[i16]>) -> Result<(), String> {
@@ -72,15 +80,17 @@ impl Drop for Process {
     }
 }
 
-pub fn start(root: PathBuf, data: PathBuf) -> (Sender<Work>, Receiver<Event>) {
+pub fn start(root: PathBuf, data: PathBuf) -> (Requests, Receiver<Event>) {
     let (tx, rx) = mpsc::channel();
     let (results, events) = mpsc::channel();
+    let latest=Arc::new(AtomicU64::new(0));let wanted=latest.clone();
     std::thread::spawn(move || {
         let mut process: Option<Process> = None;
         while let Ok(work) = rx.recv() {
             match work {
                 Work::Unload => { process = None; }
                 Work::Request(session, request, samples) => {
+                    if session!=wanted.load(Ordering::Acquire) {continue;}
                     let result = (|| {
                         if process.is_none() { process = Some(Process::start(&root, &data)?); }
                         process.as_mut().unwrap().request(&request, samples.as_deref())
@@ -91,7 +101,7 @@ pub fn start(root: PathBuf, data: PathBuf) -> (Sender<Work>, Receiver<Event>) {
             }
         }
     });
-    (tx, events)
+    (Requests{sender:tx,latest}, events)
 }
 
 #[cfg(test)]

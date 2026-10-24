@@ -98,7 +98,7 @@ def main():
         assert 'report' in words and 'tomorrow' in words,result
         assert result['language']=='en'
         result=worker.process({'command':'recognize','id':2,'samples':samples,'language':'both','final':True})
-        assert result['language'] in ('en','id')
+        assert result['language']=='en'  # Retired mixed setting migrates to fixed English.
         assert 'report' in result['cleaned'].lower() and 'tomorrow' in result['cleaned'].lower(),result
         print('Real local CPU model load and synthetic speech decode passed')
         command=Path(temporary)/'language-command.wav'

@@ -1,6 +1,6 @@
 //! Conservative spoken corrections to recently inserted dictation, never arbitrary editor text.
 #[derive(Debug, PartialEq)]
-pub struct Correction { pub start: usize, pub replacement: String }
+pub struct Correction { pub start: usize, pub end:usize, pub replacement: String }
 fn tokens(text: &str) -> Vec<(usize, String)> {
     let mut result = Vec::new(); let mut start = None;
     for (i,c) in text.char_indices().chain(std::iter::once((text.len(),' '))) {
@@ -9,8 +9,8 @@ fn tokens(text: &str) -> Vec<(usize, String)> {
     }
     result
 }
-fn body(text: &str) -> (&str,bool) {
-    let lower=text.to_lowercase();
+pub fn body(text: &str) -> (&str,bool) {
+    let lower=text.to_ascii_lowercase();
     for prefix in ["correction", "correct that", "i mean", "no i meant", "ralat", "maksud saya", "maksudnya"] {
         if lower.starts_with(prefix) && lower[prefix.len()..].chars().next().map(|c| !c.is_alphanumeric()).unwrap_or(true) {
             return (text[prefix.len()..].trim_start_matches(|c:char| c.is_whitespace() || ",:.-".contains(c)),true);
@@ -20,9 +20,9 @@ fn body(text: &str) -> (&str,bool) {
 }
 pub fn might_correct(recent: &str, next: &str) -> bool {
     let (next, explicit)=body(next);
-    if explicit { return true; }
+    if explicit||named(next).is_some() { return true; }
     let before=tokens(recent); let after=tokens(next);
-    after.len()>=2 && before.iter().enumerate().skip(before.len().saturating_sub(40)).any(|(i,_)|
+    after.len()>=2 && before.iter().enumerate().any(|(i,_)|
         before.get(i+1).is_some() && before[i].1==after[0].1 && before[i+1].1==after[1].1)
 }
 fn distance(a: &[&str], b: &[&str]) -> usize {
@@ -35,13 +35,30 @@ fn distance(a: &[&str], b: &[&str]) -> usize {
     }
     row[b.len()]
 }
+pub fn explicit(text:&str)->bool {body(text.trim()).1||named(text.trim()).is_some()}
+fn named(text:&str)->Option<(&str,&str)> {
+    let lower=text.to_ascii_lowercase();
+    for (prefix,join) in [("replace "," with "),("change "," to "),("ganti "," dengan "),("ubah "," menjadi ")] {
+        if lower.starts_with(prefix) {if let Some(at)=lower.find(join) {return Some((text[prefix.len()..at].trim_matches(|c:char|c.is_whitespace()||c=='"'),text[at+join.len()..].trim()));}}
+    }
+    None
+}
 pub fn plan(recent: &str, next: &str) -> Option<Correction> {
+    if let Some((old,new))=named(next.trim()) {
+        let needle=tokens(old);let hay=tokens(recent);
+        if needle.is_empty()||new.is_empty()||needle.len()>40 {return None;}
+        let matches:Vec<_>=hay.windows(needle.len()).enumerate().filter(|(_,span)|span.iter().zip(&needle).all(|(a,b)|a.1==b.1)).map(|(i,_)|i).collect();
+        if matches.len()!=1 {return None;}
+        let i=matches[0];let last=i+needle.len()-1;
+        let end=hay[last].0+recent[hay[last].0..].chars().take_while(|c|c.is_alphanumeric()||*c=='\'').map(char::len_utf8).sum::<usize>();
+        return Some(Correction{start:hay[i].0,end,replacement:new.trim_end_matches('.').to_string()});
+    }
     let (body,explicit)=body(next.trim());
     let before=tokens(recent); let after=tokens(body);
     if before.is_empty() || after.is_empty() || after.len()>40 { return None; }
     // A marked one-word correction replaces only the last dictated word.
     if explicit && after.len()==1 {
-        return Some(Correction {start:before.last()?.0,replacement:format!("{} ",body.trim())});
+        return Some(Correction {start:before.last()?.0,end:recent.len(),replacement:format!("{} ",body.trim())});
     }
     if after.len()<4 && !explicit { return None; }
     let after_words:Vec<_>=after.iter().map(|(_,w)|w.as_str()).collect();
@@ -58,10 +75,29 @@ pub fn plan(recent: &str, next: &str) -> Option<Correction> {
             || common<2 || (!explicit && !anchored) { continue; }
         if best.map(|(_,score)|edits<score).unwrap_or(true) { best=Some((before[i].0,edits)); }
     }
-    best.map(|(start,_)|Correction{start,replacement:format!("{} ",body.trim())})
+    if let Some((start,_))=best {return Some(Correction{start,end:recent.len(),replacement:format!("{} ",body.trim())});}
+    let mut candidates=Vec::new();
+    for i in 0..before.len() {
+        if before.get(i).map(|v|v.1.as_str())!=after_words.first().copied()||before.get(i+1).map(|v|v.1.as_str())!=after_words.get(1).copied() {continue;}
+        let end=i+after.len();if end>before.len() {continue;}
+        let edits=distance(&before_words[i..end],&after_words);
+        if edits==0||edits>(after.len()/5).max(1) {continue;}
+        let stop=if end==before.len() {recent.len()}else{before[end].0};
+        candidates.push(Correction{start:before[i].0,end:stop,replacement:format!("{} ",body.trim())});
+    }
+    if candidates.len()==1 {candidates.pop()}else{None}
 }
 #[cfg(test)] mod tests {
     use super::*;
+    #[test] fn explicit_range_repairs_preserve_later_text_and_reject_ambiguity() {
+        let text="Send the blue report tomorrow. Then call Alice. ";let fix=plan(text,"replace blue with green").unwrap();
+        let mut updated=text.to_string();updated.replace_range(fix.start..fix.end,&fix.replacement);
+        assert_eq!(updated,"Send the green report tomorrow. Then call Alice. ");
+        assert!(plan("blue blue ","replace blue with green").is_none());assert!(explicit("replace blue with green"));
+        assert!(plan("hello ","correction").is_none());assert!(explicit("correction"));
+        let old="I want to sand the report. Please call Alice. ";let fix=plan(old,"I want to send the report.").unwrap();
+        let mut updated=old.to_string();updated.replace_range(fix.start..fix.end,&fix.replacement);assert_eq!(updated,"I want to send the report. Please call Alice. ");
+    }
     #[test] fn repeat_repairs_typo() {
         let old="Earlier sentence. I want to sand the report tomorrow. ";
         let fix=plan(old,"I want to send the report tomorrow.").unwrap();

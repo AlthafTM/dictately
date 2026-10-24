@@ -13,6 +13,7 @@
   "app/runtime_paths.py",
   "app/hotkeys.py",
   "app/language_commands.py",
+  "app/screen_capture.py",
   "app/ui_preferences.py",
   "requirements/base.txt",
   "requirements/gpu.txt",

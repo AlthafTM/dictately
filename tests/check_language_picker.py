@@ -79,7 +79,7 @@ def main():
     user.keybd_event(18,0,0,0);user.keybd_event(18,0,2,0);user.SetForegroundWindow(fixture);user.SetFocus(fixture)
     results={}
     try:
-        for index,(name,expected) in enumerate([('english','en'),('indonesia','id'),('both','both')]):
+        for index,(name,expected) in enumerate([('english','en'),('indonesia','id')]):
             print('Starting language-picker check:',name,flush=True)
             data=base/name;data.mkdir()
             with wave.open(str(ROOT/f'qa/language-{name}.wav'),'rb') as source:
@@ -112,10 +112,12 @@ def main():
                     time.sleep(1.2);pump()
                     assert not status().get('worker_loaded'),'Silence loaded the AI model'
                     bounds=w.RECT();user.GetClientRect(hwnd,c.byref(bounds))
-                    # Mouse-select Both; no voice text should have been delivered.
-                    x=int(304*bounds.right/380);y=int(74*bounds.bottom/112)
+                    # Clicking the capsule selects Indonesian without loading the model.
+                    x=bounds.right//2;y=bounds.bottom//2
+                    user.PostMessageW(hwnd,0x201,1,(y<<16)|x)
                     user.PostMessageW(hwnd,0x202,0,(y<<16)|x)
-                    wait(lambda:not status().get('language_picker') and status().get('language')=='both')
+                    wait(lambda:status().get('language_picker') and status().get('language')=='id')
+                    chord(121);wait(lambda:not status().get('language_picker'))
                     results['mouse_selection']=True
                     assert not status().get('worker_loaded'),'Mouse selection loaded the AI model'
                     results['cold_mouse_without_model']=True
@@ -130,7 +132,8 @@ def main():
                 # Direct owned-window request also covers the tray menu path.
                 user.PostMessageW(hwnd,0x8005,0,0)
                 wait(lambda:status().get('language_picker'))
-                wait(lambda:not status().get('language_picker') and status().get('language')==expected,40)
+                wait(lambda:status().get('language_picker') and status().get('language')==expected,40)
+                user.PostMessageW(hwnd,0x8002,0,0);wait(lambda:not status().get('language_picker'))
                 assert not (data/'history.json').exists(),'Language command was saved as dictation'
                 assert status().get('pending_characters')==0
                 results['voice_'+name]=True

@@ -16,7 +16,7 @@ from ui_preferences import POSITIONS, position_name
 ROOT = app_root()
 DATA = user_data_dir()
 BG, CARD, FIELD, TEXT, MUTED, ACCENT = "#111111", "#1d1d1d", "#2a2a2a", "#f1f1f1", "#aaaaaa", "#e5e5e5"
-LANGUAGES = {"English only": "en", "Indonesian only": "id", "English + Indonesian": "both"}
+LANGUAGES = {"English only": "en", "Indonesian only": "id"}
 
 def read(path, default):
     try:
@@ -122,7 +122,7 @@ class Window:
         language_code = current.get("language", "en")
         self.language = tk.StringVar(value=next((name for name, code in LANGUAGES.items() if code == language_code), next(iter(LANGUAGES))))
         ttk.Label(settings, text="Recognition language", font=("Segoe UI", 13, "bold")).pack(anchor="w")
-        ttk.Label(settings, text="Choose a fixed language or both. The language shortcut opens a voice/mouse picker.", style="Muted.TLabel").pack(anchor="w", pady=(5, 12))
+        ttk.Label(settings, text="Choose English or Indonesian. Scroll, drag, or speak in the language picker.", style="Muted.TLabel").pack(anchor="w", pady=(5, 12))
         ttk.Combobox(settings, values=list(LANGUAGES), textvariable=self.language, state="readonly", font=("Segoe UI", 11)).pack(fill="x")
         self.cleanup = tk.BooleanVar(value=current.get("cleanup", True))
         self.accuracy = tk.BooleanVar(value=current.get("accuracy", True))
@@ -150,10 +150,10 @@ class Window:
             ttk.Label(row,text=label).pack(side='left')
             button=ttk.Button(row,text=shortcut_name(getattr(self,field)),command=lambda name=field:self.assign_shortcut(name))
             button.pack(side='right');self.shortcut_buttons[field]=button
-        self.shortcut_feedback=tk.StringVar(value='Defaults: F12 for dictation · F10 for language')
+        self.shortcut_feedback=tk.StringVar(value='Defaults: F12 dictation · F10 language')
         ttk.Label(shortcuts,textvariable=self.shortcut_feedback,style='Muted.TLabel').pack(anchor='w',pady=(20,10))
         actions=ttk.Frame(shortcuts);actions.pack(fill='x',pady=12)
-        ttk.Button(actions,text='Restore F12 / F10',command=self.reset_shortcuts).pack(side='left')
+        ttk.Button(actions,text='Restore defaults',command=self.reset_shortcuts).pack(side='left')
         ttk.Button(actions,text='Save shortcuts',style='Accent.TButton',command=self.save_shortcuts).pack(side='right')
         if '--shortcuts' in sys.argv:tabs.select(shortcuts)
         if '--preferences' in sys.argv:tabs.select(preferences)
@@ -244,9 +244,8 @@ class Window:
 
     def assign_shortcut(self,field):
         def chosen(value):
-            other='language_hotkey' if field=='dictation_hotkey' else 'dictation_hotkey'
-            if value==getattr(self,other):
-                self.shortcut_feedback.set('Choose different shortcuts for microphone and language');return
+            if any(value==getattr(self,other) for other in self.shortcut_buttons if other!=field):
+                self.shortcut_feedback.set('Choose a different shortcut for each control');return
             setattr(self,field,value);self.shortcut_buttons[field].configure(text=shortcut_name(value))
             self.shortcut_feedback.set('Press Save shortcuts to apply')
         capture_shortcut(self.root,getattr(self,field),chosen)
@@ -257,7 +256,8 @@ class Window:
         self.shortcut_feedback.set('Defaults restored · press Save shortcuts to apply')
 
     def save_shortcuts(self):
-        if not all(valid_shortcut(value) for value in (self.dictation_hotkey,self.language_hotkey)) or self.dictation_hotkey==self.language_hotkey:
+        values=(self.dictation_hotkey,self.language_hotkey)
+        if not all(valid_shortcut(value) for value in values) or len(set(values))!=2:
             self.shortcut_feedback.set('Choose two different valid shortcuts');return
         current=read(DATA/'settings.json',{})
         current.update(dictation_hotkey=self.dictation_hotkey,language_hotkey=self.language_hotkey)

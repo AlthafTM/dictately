@@ -22,9 +22,10 @@ Dictately turns **English** and **Indonesian** speech into text in your focused 
 ## Features
 
 - Live text in short phrases as you speak
-- **English**, **Indonesian**, or **Both**, selectable by voice or mouse
+- **English** or **Indonesian**, with voice, click, scroll, and drag language selection
 - Custom shortcuts, microphone selection, and six overlay positions
 - Spoken corrections, personal vocabulary, and optional filler cleanup
+- [Voice screenshots](docs/USER-GUIDE.md#voice-screenshots) with native crop controls
 - A compact waveform UI and optional launch at sign-in
 
 More languages may be supported later.
@@ -91,7 +92,7 @@ Follow the [step-by-step source setup guide](docs/MACOS-LINUX.md). These version
 
 ## How to use
 
-1. Open the language picker and select **English**, **Indonesia**, or **Both**
+1. Open the language picker and select **English** or **Indonesia** by voice, clicking, scrolling, or dragging
 2. Click the text field where you want to type
 3. Start dictation, speak normally, then stop to finish the last phrase
 

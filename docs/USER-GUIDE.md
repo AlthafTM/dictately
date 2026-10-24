@@ -75,7 +75,7 @@ Setup builds the native controller if `Dictately.exe` is missing. Use `-Rebuild`
 ## How to use
 
 1. Launch Dictately; find the waveform icon in the Windows notification area, possibly under the hidden-icons arrow
-2. Use your language-selection shortcut and click **English**, **Indonesia**, or **Both**, or say “English”, “Indonesia”, or “Both English and Indonesian”
+2. Use your language-selection shortcut and click, scroll, or drag the compact panel, or say “English” or “Indonesia”
 3. Click the message box, document, or other editable field where you want the words
 4. Use your dictation shortcut once and speak normally; the waveform opens and responds to your microphone
 5. Use your dictation shortcut again to stop the microphone and finish the last phrase
@@ -91,13 +91,13 @@ Setup builds the native controller if `Dictately.exe` is missing. Use `-Rebuild`
 | Audio & appearance | Choose your microphone and waveform position, then save |
 | `scripts/windows/Stop Dictately.ps1` | Stop the installed controller from PowerShell |
 
-**Default Windows shortcuts: F12 for dictation and F10 for language selection.** Both are configurable during setup or from **Tray → Keyboard shortcuts**. A **Dictately Settings** Start-menu launcher also opens the editor, with a shortcuts control at its bottom left. Esc cancels shortcut capture; duplicate assignments and modifier-only shortcuts are rejected. Windows-reserved shortcuts may be unavailable, and assigning a normal typing key consumes that key globally while Dictately runs.
+**Default Windows shortcuts: F12 for dictation, F10 for language selection.** Both can be changed from **Tray → Keyboard shortcuts**; setup also offers the dictation and language bindings. A **Dictately Settings** Start-menu launcher opens the same editor. Esc cancels shortcut capture; duplicate assignments and modifier-only shortcuts are rejected. Windows-reserved shortcuts may be unavailable, and assigning a normal typing key consumes that key globally while Dictately runs.
 
 Open **Tray → Audio & appearance** to select **Bottom left / center / right** or **Top left / center / right**. The waveform and Windows language picker use that location on the active monitor, with room for the taskbar. **Bottom center** is the default. Changes apply to the next recording or picker opening.
 
 In the same panel, choose **System default** to follow your operating system's microphone setting, or select a specific device and save it as your preferred microphone. Use **Refresh** after connecting a new device. Windows remembers the endpoint identity rather than its changing list position. If a saved device is disconnected, choose an available microphone or System default before recording. These controls are also available in the macOS/Linux tray menu; those editions match device name and audio host, and reject ambiguous duplicate matches.
 
-**English** and **Indonesian** modes stay locked for the recording. **Both** enables local per-segment language selection with candidates restricted to English and Indonesian; it does not translate. Rapid switching within a sentence can still be less reliable than a fixed mode. Pressing the language shortcut during dictation finishes the current phrase before opening the picker. Picker speech is used only for language commands, never inserted or saved as a dictation. Click an option if a voice command is unclear. The picker closes after 30 seconds or when you use your language-selection shortcut again or press Esc. After choosing, use your dictation shortcut to start speaking. The language picker and custom Windows shortcuts are part of the Windows controller; the experimental Mac/Linux frontend keeps its separately documented controls.
+**English** and **Indonesian** stay locked for the recording. Mixed-language mode is disabled. The compact picker shows the current language with two overlapping balls: click to switch, or scroll or drag horizontally or vertically, or say the language name. Selection saves immediately and the picker stays open until you press its shortcut again or Esc. Picker speech never enters a text field or dictation history. Opening the picker during dictation first finishes the current phrase.
 
 ### Choose a local AI model
 
@@ -125,13 +125,15 @@ Pause, then repeat the sentence with the correction:
 
 A closely matching repeat can replace the earlier dictated sentence instead of adding a duplicate. You can also say **Correction, Tuesday** or **Ralat, Selasa** to replace the last dictated word.
 
-Corrections apply to recently inserted dictation in the **same field**, for up to **90 seconds**. Keep the cursor immediately after that text. Dictately verifies the old suffix before replacing it. Moving the cursor, manually editing/submitting the text, or unsupported editor APIs can prevent correction; the new speech may be appended normally instead. Similarity matching is conservative and does not understand arbitrary editing instructions.
+To fix an earlier word, say **Replace Friday with Monday** or **Ganti Jumat dengan Senin**. The phrase must occur once in the tracked text. You can also select dictated text, or place the caret inside a word, and say **Correction, Monday**. Text after the edit stays in place; the caret follows the replacement.
+
+Corrections track up to 8 KB of dictation in the **same field** for **30 minutes**. Dictately verifies that text before editing it. Manual changes, submitting the message, or unsupported editor APIs can prevent a correction. A failed correction is kept in History and is **not appended**. Similarity matching is conservative; explicit replacement commands or a selection give a clearer target.
 
 ### Where the text goes
 
 A recording is tied to its original editable field. Switching windows or fields pauses insertion; returning to the original field during the recording can resume it. Start a new recording to change destinations.
 
-If an app takes time to expose its editor, recording stays active while Dictately retries the original destination. Clicking, scrolling, or typing before that initial lookup completes cancels deferred binding, so delayed text cannot choose a new field. Text that could not be inserted remains in history.
+If an app takes time to expose its editor, Dictately briefly retries the original destination. Typing pauses after four rejections or five seconds of waiting, with one quiet notification. Recording stays open until you stop it, and new speech remains available in History. Recover the speech from History, click the intended field, and start again. Clicking, scrolling, or typing before that initial lookup completes cancels deferred binding, so delayed text cannot choose a new field. Text that could not be inserted remains in history.
 
 Dictately never presses Enter to send a message and does not replace your clipboard while dictating. Password and read-only controls are excluded. Custom, protected, or elevated applications may reject injected typing. Browser/editor compatibility can vary; there is no guarantee that every text surface is supported.
 
@@ -147,3 +149,20 @@ Settings, status, logs, and transcript history are stored in `%LOCALAPPDATA%\Dic
 - **Stop or uninstall:** quit from the tray, disable **Start with Windows**, remove the Start menu shortcut, and remove the app folder; delete `%LOCALAPPDATA%\Dictately` separately if you also want to remove local transcripts
 
 Speech inference stays on the device. Normal dictation does not save audio recordings. Original and cleaned transcripts are stored locally until cleared or displaced by newer history. No browser extension, cloud transcription service, or generative rewriting model is required.
+
+## Voice screenshots
+
+1. Start a fresh dictation recording and say only **“screenshot”**, **“screen shot”**, or **“SS”**
+2. Pause for **250 ms after the last recognized word**. Dictately hides its waveform immediately and opens the native crop interface without an added delay
+3. Drag over the area you want. Use the native tool to save the selected image, or press **Esc** to cancel
+4. Listening resumes after the crop interface closes, so you can say the command again. Press your dictation shortcut during capture to disable automatic resumption
+
+These same commands work with either **English** or **Indonesian** selected. Screenshot command matching does not switch the recognition language.
+
+Any extra words keep the recording as dictation. “Take a screenshot,” “tolong screenshot,” and “screenshot halaman ini” are typed normally. The pause follows recognized word timestamps, so background audio without words does not reset it. Recognition and opening the system capture tool still take processing time. If you have already dictated other text during that recording, “screenshot” is also typed normally.
+
+On Windows, **Take screenshot** in the tray menu opens Snipping Tool directly. The selection goes to the clipboard. Open its notification to edit or save; automatic saving follows your Snipping Tool settings.
+
+On macOS, interactive capture saves the selected region to `~/Pictures/Dictately`. macOS may request screen-recording permission. On Linux, Dictately uses an installed Spectacle, GNOME Screenshot, Flameshot, or Xfce Screenshooter; crop and saving controls belong to that tool. Missing tools produce a notice, with no automatic installation. The desktop frontend still has its existing platform limits.
+
+A screenshot shows visible content, with no scrolling-page capture, OCR, vision model, or upload. The crop interface follows your operating system's appearance.

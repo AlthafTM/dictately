@@ -26,9 +26,9 @@ See [Local AI models](AI-MODELS.md) for step-by-step installation, switching, an
 
 ## Languages and picker
 
-The product currently supports **English** and **Indonesian**. Additional language support may come later. Fixed modes pass an explicit language to Whisper. **Both** filters the detector to those two candidates, including per-segment detection; it does not translate, and rapid switching within one sentence can still cause mistakes.
+The product currently supports **English** and **Indonesian**. Additional language support may come later. Each recording passes its selected language explicitly to Whisper. Mixed-language recognition is disabled.
 
-F10 opens the Windows voice-and-mouse language picker. Saying a language uses short English and Indonesian recognition passes and a strict command parser. Picker commands are never inserted as dictation or saved to history. After the speech model has unloaded, mouse selection and silence do not load it again; a voice command can have a cold-start delay. F12/F10 are configurable in setup and settings.
+F10 opens the Windows voice-and-mouse language picker. Saying a language tries the current recognition language first, then the other if needed and a strict command parser. Picker commands are never inserted as dictation or saved to history. After the speech model has unloaded, mouse selection and silence do not load it again; a voice command can have a cold-start delay. F12/F10 are configurable in setup and settings.
 
 ## Privacy, downloads, and storage
 

@@ -22,13 +22,14 @@ if sys.stdin is not None:
     sys.stdin.reconfigure(encoding="utf-8")
 from speech_models import selected_model
 from worker_protocol import read_request
-from language_commands import BilingualBackend, language_command, shared_encoder
+from screen_capture import screenshot_command, screenshot_candidate
+from language_commands import language_command, shared_encoder
 
 os.environ["HF_HUB_OFFLINE"] = "1"
 os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
 os.environ["DO_NOT_TRACK"] = "1"
 
-LANGUAGES = {"en", "id", "both"}
+LANGUAGES = {"en", "id"}
 
 def needs_fragment_cleanup(text):
     """Keep clean ongoing speech on the fast path; edit audible disfluencies."""
@@ -129,6 +130,7 @@ class Worker:
         self.model_name = "unloaded"
         self.committed_words = []
         self.previous_words = []
+        self.session_dictated = False
 
     def prepare(self):
         if self.engine.whisper is None:
@@ -161,7 +163,6 @@ class Worker:
                 self.device = "cpu"
                 self.engine.whisper = WhisperModel(model_path, device="cpu", compute_type="int8",
                     cpu_threads=4, num_workers=1, local_files_only=True)
-            self.engine.whisper.model = BilingualBackend(self.engine.whisper.model)
 
     def process(self, request):
         import numpy as np
@@ -169,6 +170,7 @@ class Worker:
         if request["command"] == "prepare":
             self.committed_words = []
             self.previous_words = []
+            self.session_dictated = False
             # Recognition supplies punctuation. Never warm a separate rewriting model.
             self.prepare()
             return {"type": "ready", "id": request.get("id", 0), "device": self.device, "model":self.model_name}
@@ -178,15 +180,14 @@ class Worker:
             if len(audio)<6400 or float(np.sqrt(np.dot(audio,audio)/len(audio)))<.001:
                 return {'type':'language_selected','id':request.get('id',0),'language':None,'consumed':len(audio)}
             self.prepare()
-            choices=[]
+            selected=None
+            first=locked_language(request.get('language'))
             with shared_encoder(self.engine.whisper):
-                for language in ('en','id'):
-                    segments,_=self.engine.whisper.transcribe(audio,language=language,beam_size=3,
+                for language in (first,'id' if first=='en' else 'en'):
+                    segments,_=self.engine.whisper.transcribe(audio,language=language,beam_size=1,
                         temperature=0.0,condition_on_previous_text=False,vad_filter=True)
-                    choice=language_command(' '.join(segment.text for segment in segments))
-                    if choice:choices.append(choice)
-            # A spoken "both" wins, otherwise conflicting decodes require a retry.
-            selected='both' if 'both' in choices else choices[0] if choices and len(set(choices))==1 else None
+                    selected=language_command(' '.join(segment.text for segment in segments))
+                    if selected:break
             return {'type':'language_selected','id':request.get('id',0),'language':selected,'consumed':len(audio)}
         final = request.get("final", False)
         if len(audio) < 3200 or float(np.sqrt(np.dot(audio, audio) / len(audio))) < .0005:
@@ -200,17 +201,26 @@ class Worker:
             vad_parameters={"min_silence_duration_ms": 500, "speech_pad_ms": 300}, condition_on_previous_text=False,
             hotwords=vocabulary or None,
             compression_ratio_threshold=1.9, log_prob_threshold=-.8, hallucination_silence_threshold=1.0)
-        if selected=='both':
-            # The underlying detector is filtered by BilingualBackend, including
-            # detection performed by faster-whisper inside multilingual segments.
-            segments, info = model.transcribe(audio, language=None, multilingual=True, **options)
-            detected=getattr(info,'language','en')
-        else:
-            segments, info = model.transcribe(audio, language=selected, **options)
-            detected=selected
+        segments, info = model.transcribe(audio, language=selected, **options)
+        detected=selected
         segments = list(segments)
         preview = " ".join(seg.text.strip() for seg in segments).strip()
         words = [word for seg in segments for word in (seg.words or [])]
+        # Word timestamps define the pause: microphone noise must not postpone capture.
+        # Full-phrase matching still protects ordinary dictation with extra words.
+        can_command=not self.session_dictated and not request.get("previous_text","").strip() and not self.committed_words
+        word_ends=[float(word.end) for word in words if any(ch.isalnum() for ch in word.word)]
+        word_pause=max(0.,len(audio)/16000.-max(word_ends)) if word_ends else None
+        command_ready=bool(final or (word_pause is not None and word_pause>=0.25) or
+                           (word_pause is None and request.get("pause_seconds",0)>=0.25))
+        if can_command and screenshot_command(preview) and command_ready:
+            self.committed_words=[];self.previous_words=[]
+            return {"type":"result","id":request["id"],"raw":"","cleaned":"","preview":"",
+                    "action":"screenshot","consumed":len(audio),"through":0,"flushed":True,
+                    "language":selected,"seconds":round(time.monotonic()-started,3)}
+        if can_command and screenshot_candidate(preview) and not command_ready:
+            return {"type":"result","id":request["id"],"raw":"","cleaned":"","preview":preview,
+                    "consumed":0,"through":0,"flushed":False,"language":selected,"seconds":round(time.monotonic()-started,3)}
         normalize = lambda word: re.sub(r"[^\w]", "", word.lower())
         current = [normalize(word.word) for word in words]
         trailing_silence = len(audio)/16000 - (words[-1].end if words else len(audio)/16000)
@@ -240,7 +250,9 @@ class Worker:
             self.previous_words = []
         cleaned = quick_cleanup(raw) if request.get("cleanup", True) else raw
         applied = cleaned != raw
-        cleaned = dictation_punctuation(re.sub(r"\s+", " ", cleaned).strip())
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        cleaned = dictation_punctuation(cleaned)
+        if raw.strip():self.session_dictated=True
         self.engine.last_used = time.monotonic()
         return {"type": "result", "id": request["id"], "raw": raw, "cleaned": cleaned,
             "preview": preview, "consumed": consumed, "language": detected if detected in ('en','id') else 'en',

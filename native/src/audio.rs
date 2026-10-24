@@ -75,8 +75,14 @@ impl Microphone {
                     Command::Start(session, delay, preference) => {
                         // Serialize close/open so rapid cancel/restart cannot race
                         // two microphone handles, even if the old open was slow.
+                        if current.load(Ordering::Acquire)!=session {
+                            let _=results.send(Event::Started(session,Err("Microphone start cancelled".into())));continue;
+                        }
                         active = None;
-                        if !delay.is_zero() { std::thread::sleep(delay); }
+                        let deadline=std::time::Instant::now()+delay;
+                        while std::time::Instant::now()<deadline&&current.load(Ordering::Acquire)==session {
+                            std::thread::sleep(deadline.saturating_duration_since(std::time::Instant::now()).min(Duration::from_millis(10)));
+                        }
                         let result = Capture::start_if_current(&preference,||current.load(Ordering::Acquire) == session).map(|capture| {
                             let shared = capture.shared.clone();
                             active = Some((session, capture));
@@ -174,6 +180,7 @@ impl Capture {
             }
             if !current() { return Err("Microphone start cancelled".into()); }
             if waveInStart(handle) != 0 { return Err("Microphone could not start".into()); }
+            if !current() {return Err("Microphone start cancelled".into());}
             // Recycle independently of UI Automation/typing. A slow editor must not
             // exhaust the microphone queue and punch holes in the recorded speech.
             let active = capture.pump_running.clone();
@@ -247,6 +254,54 @@ mod tests {
                 None => std::thread::sleep(Duration::from_millis(2)),
             }
         }
+    }
+
+    #[test]
+    fn cancelling_delayed_open_does_not_wait_for_the_delay_or_open_a_device() {
+        let microphone=Microphone::new();
+        microphone.start(9,Duration::from_secs(30),"");
+        std::thread::sleep(Duration::from_millis(20));
+        let start=std::time::Instant::now();microphone.stop(9);
+        loop {
+            assert!(start.elapsed()<Duration::from_secs(1),"Cancelled start blocked shutdown");
+            match microphone.poll() {
+                Some(Event::Started(9,result))=>assert!(result.is_err()),
+                Some(Event::Stopped(9,tail))=>{assert!(tail.is_empty());break;},
+                Some(_)=>panic!("Unexpected session"),
+                None=>std::thread::sleep(Duration::from_millis(2)),
+            }
+        }
+    }
+
+    #[test]
+    #[ignore="Requires the Windows default microphone; records briefly in memory only"]
+    fn rapid_real_device_switches_release_the_final_capture() {
+        let microphone=Microphone::new();
+        for session in 1..=16 {
+            microphone.start(session,Duration::ZERO,"");
+            std::thread::sleep(Duration::from_millis(15));
+            microphone.stop(session);
+        }
+        microphone.start(17,Duration::ZERO,"");
+        let started=std::time::Instant::now();
+        let shared=loop {
+            assert!(started.elapsed()<Duration::from_secs(8),"Stale device requests delayed restart");
+            match microphone.poll() {
+                Some(Event::Started(17,result))=>break result.expect("Default microphone failed to open"),
+                _=>std::thread::sleep(Duration::from_millis(2)),
+            }
+        };
+        assert!(shared.running.load(Ordering::Acquire));
+        microphone.stop(17);
+        let stopped=std::time::Instant::now();
+        loop {
+            assert!(stopped.elapsed()<Duration::from_secs(3),"Microphone did not close");
+            match microphone.poll() {
+                Some(Event::Stopped(17,_))=>break,
+                _=>std::thread::sleep(Duration::from_millis(2)),
+            }
+        }
+        assert!(!shared.running.load(Ordering::Acquire),"Stopped capture is still running");
     }
 
     #[test]

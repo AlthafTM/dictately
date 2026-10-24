@@ -38,20 +38,5 @@ def language_command(text):
         return None
     chosen={aliases[word] for word in words if word in aliases}
     if {'both','keduanya'} & set(words) or chosen=={'en','id'}:
-        return 'both'
+        return None
     return next(iter(chosen)) if len(chosen)==1 else None
-
-
-class BilingualBackend:
-    """Constrain Whisper's per-segment language token selection to EN and ID."""
-    def __init__(self,backend):self.backend=backend
-    def __getattr__(self,name):return getattr(self.backend,name)
-    def detect_language(self,*args,**kwargs):
-        batches=self.backend.detect_language(*args,**kwargs)
-        result=[]
-        for batch in batches:
-            choices=[(token,probability) for token,probability in batch if token in ('<|en|>','<|id|>')]
-            total=sum(p for _,p in choices)
-            result.append(sorted([(token,p/total if total else .5) for token,p in choices],key=lambda item:item[1],reverse=True)
-                          or [('<|en|>',.5),('<|id|>',.5)])
-        return result

@@ -11,7 +11,8 @@ $phrases=@{
     'qa\correction-second.wav'='I would like to send the report on Monday.'
     'qa\language-english.wav'='English'
     'qa\language-indonesia.wav'='Indonesia'
-    'qa\language-both.wav'='Both English and Indonesian'
+    'qa\picker-indonesia.wav'='Indonesia'
+    'qa\delivery-voice.wav'='I want to send the report tomorrow. Please call Alice after lunch. We should check the final details before the meeting on Thursday.'
 }
 try {
     foreach ($item in $phrases.GetEnumerator()) {
@@ -32,6 +33,9 @@ for name in ['correction-first.wav','correction-second.wav']:
         assert (f.getframerate(),f.getsampwidth(),f.getnchannels())==(16000,2,1)
         parts.append(f.readframes(f.getnframes()))
 Path('qa/correction.pcm').write_bytes(parts[0]+bytes(64000)+parts[1]+bytes(32000))
+with wave.open('qa/delivery-voice.wav','rb') as f:
+    voice=f.readframes(f.getnframes())
+Path('qa/delivery-voice.pcm').write_bytes(bytes(32000)+voice+bytes(32000*2)+voice+bytes(32000*4))
 '@ | & $taskPython -
     if ($LASTEXITCODE -ne 0) {throw 'Fixture assembly failed'}
 } finally {Pop-Location}

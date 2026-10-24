@@ -1,7 +1,7 @@
 from _support import ROOT
 import unittest
 from types import SimpleNamespace
-from language_commands import language_command, BilingualBackend
+from language_commands import language_command
 from hotkeys import valid_shortcut, shortcut_name, LANGUAGE_DEFAULT
 from live_worker import Worker, locked_language
 from language_commands import shared_encoder
@@ -37,28 +37,18 @@ class LanguageControlTests(unittest.TestCase):
         self.assertNotIn('encode',vars(model))
 
     def test_picker_accepts_only_short_explicit_language_commands(self):
-        for phrase,expected in [('English','en'),('bahasa Inggris','en'),('Indonesia.','id'),('Indonesian','id'),('both','both'),('keduanya','both'),('Indonesia dan English','both'),('choose both English and Indonesian','both')]:
+        for phrase,expected in [('English','en'),('bahasa Inggris','en'),('Indonesia.','id'),('Indonesian','id'),('both',None),('keduanya',None),('Indonesia dan English',None),('choose both English and Indonesian',None)]:
             self.assertEqual(language_command(phrase),expected)
         for phrase in ['Please send my English report','English is important','hello','', 'I live in Indonesia']:
             self.assertIsNone(language_command(phrase))
 
-    def test_per_segment_detector_cannot_select_a_third_language(self):
-        backend=SimpleNamespace(detect_language=lambda *args,**kwargs:[
-            [('<|fr|>',.95),('<|id|>',.04),('<|en|>',.01)],
-            [('<|ja|>',.8),('<|en|>',.2),('<|id|>',0)]])
-        result=BilingualBackend(backend).detect_language(None)
-        self.assertEqual(result[0][0][0],'<|id|>')
-        for row in result:
-            self.assertEqual({token for token,_ in row},{'<|en|>','<|id|>'})
-            self.assertAlmostEqual(sum(probability for _,probability in row),1.)
-
-    def test_both_enables_filtered_multilingual_recognition(self):
+    def test_legacy_both_falls_back_to_locked_english(self):
         calls=[]
         def decode(audio,**options):calls.append(options);return iter([]),SimpleNamespace(language='id')
         worker=Worker();worker.prepare=lambda:None;worker.engine.whisper=SimpleNamespace(transcribe=decode)
         result=worker.process({'command':'recognize','id':1,'samples':[1500]*32000,'language':'both','final':True})
-        self.assertTrue(calls[0]['multilingual']);self.assertIsNone(calls[0]['language'])
-        self.assertEqual(result['language'],'id');self.assertEqual(locked_language('both'),'both')
+        self.assertNotIn('multilingual',calls[0]);self.assertEqual(calls[0]['language'],'en')
+        self.assertEqual(result['language'],'en');self.assertEqual(locked_language('both'),'en')
 
     def test_picker_results_are_control_messages_without_typable_text(self):
         worker=Worker();worker.prepare=lambda:None
@@ -66,6 +56,18 @@ class LanguageControlTests(unittest.TestCase):
         result=worker.process({'command':'select_language','id':4,'samples':[1500]*32000})
         self.assertEqual(result['type'],'language_selected');self.assertEqual(result['language'],'id')
         self.assertNotIn('cleaned',result);self.assertNotIn('raw',result)
+
+    def test_clear_voice_selection_uses_one_decode_and_unclear_selection_retries(self):
+        calls=[]
+        def decode(audio,**options):
+            calls.append(options['language'])
+            return iter([SimpleNamespace(text='Indonesia' if options['language']=='id' else 'not a command')]),None
+        worker=Worker();worker.prepare=lambda:None;worker.engine.whisper=SimpleNamespace(transcribe=decode)
+        result=worker.process({'command':'select_language','id':1,'language':'id','samples':[1500]*32000})
+        self.assertEqual(result['language'],'id');self.assertEqual(calls,['id'])
+        calls.clear()
+        result=worker.process({'command':'select_language','id':2,'language':'en','samples':[1500]*32000})
+        self.assertEqual(result['language'],'id');self.assertEqual(calls,['en','id'])
 
     def test_shortcuts_support_modifiers_but_reject_bare_modifiers(self):
         self.assertTrue(valid_shortcut(123));self.assertTrue(valid_shortcut(0x341))

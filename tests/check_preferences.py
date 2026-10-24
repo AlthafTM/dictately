@@ -54,6 +54,11 @@ def main():
             window.poll();assert window.rows[0]['cleaned']=='history update'
             with patch.object(ui,'read',side_effect=AssertionError('Unchanged history was reparsed')):
                 window.poll()
+            before=ui.read(ui.DATA/'settings.json',{})
+            window.language_hotkey=window.dictation_hotkey;window.save_shortcuts()
+            assert ui.read(ui.DATA/'settings.json',{})==before,'Conflicting shortcut was saved'
+            window.language_hotkey=0x1bf;window.save_shortcuts()
+            assert ui.read(ui.DATA/'settings.json',{})['language_hotkey']==0x1bf
             print('Preference controls, device enumeration, persistence, unavailable device and system-default reset passed; no capture opened')
         finally:
             window.root.destroy()
