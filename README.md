@@ -120,4 +120,4 @@ Dictately uses **OpenAI Whisper large-v3-turbo** through **faster-whisper / CTra
 
 [MIT](LICENSE). You can use, fork, modify, and redistribute Dictately, keeping the license notice. Work in your own fork; changes to this repository require maintainer review. Dependencies and model weights retain their [own licenses](THIRD_PARTY.md).
 
-<sub>***Made with AI assistance, but still maintained with periodic updates. Found a bug? [Report it](https://github.com/AlthafTM/dictately/issues).***</sub>
+<sub>***This app was made with the help of AI, but is still maintained with periodic updates. Found a bug? [Report it](https://github.com/AlthafTM/dictately/issues).***</sub>
