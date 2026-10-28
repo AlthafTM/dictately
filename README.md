@@ -17,6 +17,8 @@ Dictately turns **English** and **Indonesian** speech into text in your focused 
 
 [Download for Windows](https://github.com/AlthafTM/dictately/releases/latest) · [User guide](docs/USER-GUIDE.md) · [How it works](docs/HOW-IT-WORKS.md)
 
+[Security and reporting](SECURITY.md)
+
 **How it works:** You speak into your microphone. Dictately recognizes your speech locally and types it into the text field you selected.
 
 ## Features

@@ -18,7 +18,7 @@ import sys
 import threading
 import time
 
-from runtime_paths import app_root, user_data_dir
+from runtime_paths import app_root, user_data_dir, write_private_json
 from ui_preferences import POSITIONS, position_name, overlay_origin, desktop_microphones, resolve_microphone
 
 ROOT = app_root()
@@ -33,9 +33,7 @@ def read_json(path, default):
 
 
 def write_json(path, value):
-    temporary = path.with_suffix(".tmp")
-    temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
-    temporary.replace(path)
+    write_private_json(path, value)
 
 
 class PhraseBuffer:

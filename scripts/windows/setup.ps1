@@ -13,6 +13,8 @@ if (-not (Test-Path -LiteralPath $python)) {
     if ($LASTEXITCODE -ne 0) { throw 'Install Python 3.12 (64-bit), including the py launcher and Tcl/Tk' }
 }
 $requirements = if ($Gpu) { 'requirements/gpu.txt' } else { 'requirements/base.txt' }
+& $python -m pip install -r requirements/bootstrap.txt
+if ($LASTEXITCODE -ne 0) { throw 'Package installer security update failed' }
 & $python -m pip install -r $requirements
 if ($LASTEXITCODE -ne 0) { throw 'Python dependency installation failed' }
 & $python app/download_turbo.py

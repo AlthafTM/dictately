@@ -34,12 +34,12 @@ class DesktopTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError,'Wayland'):desktop_support.check_platform()
 
     def test_platform_storage_is_not_a_windows_environment_default(self):
-        home=Path.home()
-        with patch.object(Path,'home',return_value=home):
+        with TemporaryDirectory() as directory, patch.object(Path,'home',return_value=Path(directory)):
+            home=Path(directory)
             with patch.dict(os.environ,clear=True),patch('sys.platform','darwin'):
                 self.assertEqual(user_data_dir(),home/'Library/Application Support/Dictately')
-            with patch.dict(os.environ,{'XDG_DATA_HOME':'/tmp/xdg'},clear=True),patch('sys.platform','linux'):
-                self.assertEqual(user_data_dir(),Path('/tmp/xdg/dictately'))
+            with patch.dict(os.environ,{'XDG_DATA_HOME':str(home/'xdg')},clear=True),patch('sys.platform','linux'):
+                self.assertEqual(user_data_dir(),home/'xdg/dictately')
 
     def test_launcher_quotes_paths_and_handles_desktop_field_codes(self):
         with TemporaryDirectory(prefix='Dictately space ') as temporary,patch('sys.platform','linux'):

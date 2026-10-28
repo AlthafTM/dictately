@@ -5,6 +5,8 @@ Set-Location -LiteralPath $taskRoot
 $python = Join-Path $taskRoot '.venv\Scripts\python.exe'
 if (-not (Test-Path -LiteralPath $python)) { throw 'Run scripts/windows/setup.ps1 first to create the build environment' }
 if (-not $SkipFreeze) {
+    & $python -m pip install -r requirements/bootstrap.txt
+    if ($LASTEXITCODE -ne 0) { throw 'Package installer security update failed' }
     & $python -m pip install -r requirements/installer.txt
     if ($LASTEXITCODE -ne 0) { throw 'Installer build dependencies failed' }
     & $python -m PyInstaller --noconfirm --distpath dist\frozen --workpath .tools\freeze-build installer\runtime.spec

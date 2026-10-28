@@ -10,7 +10,7 @@ from tkinter import ttk, messagebox
 import winreg
 import subprocess
 
-from runtime_paths import app_root, user_data_dir
+from runtime_paths import app_root, user_data_dir, write_private_json
 from hotkeys import capture_shortcut, shortcut_name, valid_shortcut, DICTATION_DEFAULT, LANGUAGE_DEFAULT
 from ui_preferences import POSITIONS, position_name
 ROOT = app_root()
@@ -25,9 +25,7 @@ def read(path, default):
         return default
 
 def write(path, value):
-    temporary = path.with_suffix(".tmp")
-    temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
-    temporary.replace(path)
+    write_private_json(path, value)
 
 def startup(enabled=None):
     with winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run") as key:

@@ -33,7 +33,7 @@ F10 opens the Windows voice-and-mouse language picker. Saying a language tries t
 ## Privacy, downloads, and storage
 
 - Speech inference runs on the computer. No account, API key, hosted transcription service, or per-minute subscription is required
-- Setup/model selection downloads dependencies and weights. Turbo has pinned revisions and SHA-256 verification; optional models record their resolved download revision
+- Setup/model selection downloads dependencies and weights. Windows Turbo uses a pinned revision and SHA-256 verification; optional models and the desktop preview record their resolved download revision
 - Normal dictation does not save audio files. PCM is buffered in memory; Windows may page process memory according to system settings
 - Original and cleaned transcripts are saved locally, up to 50 history entries. Clear History removes them from the app's history file; it is not a secure disk wipe
 - Windows settings/history/status/logs live in `%LOCALAPPDATA%\Dictately`. Existing settings and history from Transcribr are copied when missing; originals remain in the old folder. Models remain beside the installation and are reused during an installer upgrade

@@ -2,8 +2,57 @@
 import os
 import shutil
 import json
+import stat
+import tempfile
 from pathlib import Path
 import sys
+
+
+def private_data_dir(path):
+    path = Path(path)
+    if os.name == "nt":
+        return path
+    path.mkdir(mode=0o700, parents=True, exist_ok=True)
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    descriptor = os.open(path, flags)
+    try:
+        if os.fstat(descriptor).st_uid != os.getuid():
+            raise PermissionError("Dictately data directory must belong to the current user")
+        os.fchmod(descriptor, 0o700)
+    finally:
+        os.close(descriptor)
+    for name in ("settings.json", "history.json", "desktop-settings.json", "desktop-history.json",
+                 "desktop.log", "desktop.log.1", "desktop.log.2"):
+        try:
+            descriptor = os.open(path / name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        except FileNotFoundError:
+            continue
+        try:
+            info = os.fstat(descriptor)
+            if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
+                raise PermissionError("Dictately state must be a regular file owned by the current user")
+            os.fchmod(descriptor, 0o600)
+        finally:
+            os.close(descriptor)
+    return path
+
+
+def write_private_json(path, value):
+    path = Path(path)
+    private_data_dir(path.parent)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.is_symlink():
+        raise PermissionError("Dictately state files cannot be symbolic links")
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent,
+                                         prefix=path.name + ".", suffix=".tmp", delete=False) as output:
+            temporary = Path(output.name)
+            json.dump(value, output, ensure_ascii=False, indent=2)
+        temporary.replace(path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def app_root():
@@ -20,7 +69,7 @@ def user_data_dir():
     """Keep platform data out of the application/source directory."""
     override = os.environ.get("DICTATELY_DATA") or os.environ.get("LOCALFLOW_DATA")
     if override:
-        return Path(override).expanduser()
+        return private_data_dir(Path(override).expanduser())
     if sys.platform == "win32":
         parent = Path(os.environ["LOCALAPPDATA"])
         destination = parent / "Dictately"
@@ -33,6 +82,7 @@ def user_data_dir():
         parent = Path(os.environ.get("XDG_DATA_HOME", str(Path.home() / ".local/share")))
         destination = parent / "dictately"
         previous = [parent / "transcribr"]
+    destination = private_data_dir(destination)
     for directory in previous:
         for name in ("settings.json", "history.json"):
             source, target = directory / name, destination / name
@@ -42,6 +92,8 @@ def user_data_dir():
                 # just migrated or saved. Original files remain available.
                 try:
                     with source.open("rb") as old, target.open("xb") as new:
+                        if os.name != "nt":
+                            os.fchmod(new.fileno(), 0o600)
                         if name=="settings.json":
                             contents=old.read()
                             try:

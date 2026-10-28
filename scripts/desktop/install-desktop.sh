@@ -27,7 +27,7 @@ if ! command -v "$python_bin" >/dev/null; then
 fi
 "$python_bin" -c 'import sys; assert sys.version_info[:2] == (3, 12), "Python 3.12 is required"'
 "$python_bin" -m venv .venv-desktop
-.venv-desktop/bin/python -m pip install --upgrade pip
+.venv-desktop/bin/python -m pip install -r requirements/bootstrap.txt
 .venv-desktop/bin/python -m pip install -r requirements/desktop.txt
 model="${DICTATELY_MODEL:-small}"
 .venv-desktop/bin/python app/desktop_app.py --install-model "$model"
