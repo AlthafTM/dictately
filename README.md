@@ -1,4 +1,4 @@
-# Dictately
+# Dictately: free local dictation for Windows
 
 [![Latest release](https://img.shields.io/github/v/release/AlthafTM/dictately?style=flat-square)](https://github.com/AlthafTM/dictately/releases/latest)
 [![MIT license](https://img.shields.io/github/license/AlthafTM/dictately?style=flat-square)](LICENSE)
@@ -13,7 +13,7 @@
 
 **Local live dictation for Windows that turns your speech into text in the app you're using.**
 
-Dictately turns **English** and **Indonesian** speech into text in your focused text field. Recognition runs on your computer, with no account or subscription. After setup, dictation works offline.
+Dictately is a free, open-source voice typing app by [AlthafTM](https://github.com/AlthafTM). It turns **English** and **Indonesian** speech into text in your focused text field. Recognition runs on your computer, with no account or subscription. After setup, dictation works offline.
 
 [Download for Windows](https://github.com/AlthafTM/dictately/releases/latest) · [User guide](docs/USER-GUIDE.md) · [How it works](docs/HOW-IT-WORKS.md)
 
