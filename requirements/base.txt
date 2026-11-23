@@ -4,5 +4,5 @@ numpy==2.5.4
 requests==2.34.2
 certifi==2026.10.23
 # faster-whisper 1.2.1's file decoder requires metadata_errors (removed in PyAV 19).
-av==16.0.1
+av==19.0.2
 pyperclip==1.11.0
