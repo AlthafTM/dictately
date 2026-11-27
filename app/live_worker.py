@@ -29,6 +29,7 @@ from text_processing import (
     filter_segments,
     parse_vocabulary_terms,
     cap_vocabulary_prompt,
+    build_initial_prompt,
     filter_dictionary_echo,
     apply_replacements,
     expand_snippets,
@@ -104,10 +105,11 @@ def repair_vocabulary(raw, words, vocabulary):
     if not terms or not raw:
         return raw
     single_terms = [t for t in terms if " " not in t]
+    multi_terms = [t for t in terms if " " in t]
     result = raw
     for word in words:
         source = word.word.strip().strip(".,!?;:'\"")
-        if word.probability >= .65 or len(source) < 3 or not any(ch.isalnum() for ch in source):
+        if word.probability >= .85 or len(source) < 3 or not any(ch.isalnum() for ch in source):
             continue
         source_norm = re.sub(r"[^a-zA-Z0-9]", "", source).lower()
         if len(source_norm) < 3:
@@ -123,6 +125,23 @@ def repair_vocabulary(raw, words, vocabulary):
         if scores[0][0] < threshold or (len(scores) > 1 and scores[0][0] - scores[1][0] < .08):
             continue
         result = re.sub(r"(?<!\w)" + re.escape(source) + r"(?!\w)", lambda _: scores[0][1], result, count=1)
+    # Also repair closely matching multi-word proper nouns/terms (e.g., "telkom universiti" -> "Telkom University").
+    for term in multi_terms:
+        part_count = len(term.split())
+        tokens = list(re.finditer(r"[^\s,.;:!?]+", result))
+        if len(tokens) < part_count:
+            continue
+        target_norm = re.sub(r"[^a-zA-Z0-9]+", "", term.lower())
+        if len(target_norm) < 6:
+            continue
+        for idx in range(len(tokens) - part_count + 1):
+            span_start = tokens[idx].start()
+            span_end = tokens[idx + part_count - 1].end()
+            candidate = result[span_start:span_end]
+            cand_norm = re.sub(r"[^a-zA-Z0-9]+", "", candidate.lower())
+            if SequenceMatcher(None, cand_norm, target_norm).ratio() >= 0.84:
+                result = result[:span_start] + term + result[span_end:]
+                break
     return result
 
 
@@ -166,6 +185,7 @@ class Worker:
         self.model_root = Path(model_root) if model_root is not None else app_root()
         self.device = "cpu"
         self.force_cpu = False
+        self.cpu_fallback_at = None
         self.model_name = "unloaded"
         self.committed_words = []
         self.previous_words = []
@@ -175,6 +195,12 @@ class Worker:
         model_dir = selected_model(self.model_root, language=language)
         if os.environ.get("LOCALFLOW_MODEL") == "small":
             model_dir = "whisper-small"
+        # Retry CUDA automatically after a transient VRAM/sleep fallback cooldown.
+        if self.force_cpu and self.cpu_fallback_at is not None and (time.monotonic() - self.cpu_fallback_at) >= 120.0:
+            self.force_cpu = False
+            self.cpu_fallback_at = None
+            if self.engine.whisper is not None:
+                self.engine.close()
         if self.engine.whisper is not None and self.model_name == model_dir:
             return
         if self.engine.whisper is not None:
@@ -251,17 +277,22 @@ class Worker:
         snippets = request.get("snippets") or []
         replacements = request.get("replacements") or []
         hotwords_prompt = cap_vocabulary_prompt(vocabulary, snippets=snippets)
+        context_prompt = build_initial_prompt(request.get("previous_text", ""), hotwords_prompt)
+        accurate = bool(request.get("accuracy", True))
         options = dict(
             task="transcribe",
-            beam_size=5 if request.get("accuracy", True) else 1,
-            temperature=0.0,
+            beam_size=5 if accurate else 2,
+            best_of=5 if accurate else 2,
+            patience=1.5 if accurate else 1.0,
+            temperature=(0.0, 0.2, 0.4, 0.6),
             word_timestamps=True,
             vad_filter=True,
-            vad_parameters={"min_silence_duration_ms": 500, "speech_pad_ms": 300},
+            vad_parameters={"min_silence_duration_ms": 350, "speech_pad_ms": 200},
             condition_on_previous_text=False,
+            initial_prompt=context_prompt,
             hotwords=hotwords_prompt or None,
-            compression_ratio_threshold=1.9,
-            log_prob_threshold=-.8,
+            compression_ratio_threshold=2.4,
+            log_prob_threshold=-1.25,
             no_speech_threshold=.6,
             hallucination_silence_threshold=1.0,
         )
@@ -289,7 +320,7 @@ class Worker:
         normalize = lambda word: re.sub(r"[^\w]", "", word.lower())
         current = [normalize(word.word) for word in words]
         trailing_silence = len(audio) / 16000 - (words[-1].end if words else len(audio) / 16000)
-        flush = bool(final or request.get("flush", False) or trailing_silence >= .8 or len(audio) >= 18 * 16000)
+        flush = bool(final or request.get("flush", False) or trailing_silence >= .55 or len(audio) >= 18 * 16000)
         common = 0
         for before, after in zip(self.previous_words, current):
             if before != after:
@@ -362,9 +393,10 @@ def main():
                 import traceback
                 traceback.print_exc(file=sys.stderr)
                 if worker.device == "cuda":
-                    # Retry the same audio on CPU if a game or another app fills VRAM.
-                    worker.engine.whisper = None
+                    # Retry the same audio on CPU if a game or sleep/wake invalidates VRAM; retry CUDA after cooldown.
+                    worker.engine.close()
                     worker.force_cpu = True
+                    worker.cpu_fallback_at = time.monotonic()
                     try:
                         emit(worker.process(request))
                         continue

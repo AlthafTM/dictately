@@ -9,6 +9,7 @@ from text_processing import (
     filter_segments,
     parse_vocabulary_terms,
     cap_vocabulary_prompt,
+    build_initial_prompt,
     filter_dictionary_echo,
     apply_replacements,
     expand_snippets,
@@ -163,6 +164,68 @@ class IndonesianAndPipelineTests(unittest.TestCase):
             {"trigger": "salam", "replacement": "Hormat saya\nAlthaf"},
         ])
         self.assertEqual(format_mapping_lines(parsed, "trigger", "replacement"), "jaksel => Jakarta Selatan\nsalam => Hormat saya\\nAlthaf")
+
+    def test_initial_prompt_decoding_freedom_and_multiword_vocab_repair(self):
+        prompt = build_initial_prompt("Sebelumnya kita bahas jadwal rapat", "Telkom University, GoPay")
+        self.assertIn("jadwal rapat", prompt)
+        self.assertIn("Telkom University", prompt)
+        self.assertEqual(
+            repair_vocabulary("Saya kuliah di telkom universiti hari ini", [], "Telkom University, GoPay"),
+            "Saya kuliah di Telkom University hari ini",
+        )
+        # Wider uncertainty repair (< 0.85) fixes moderately uncertain domain words too.
+        word = SimpleNamespace(word=" GoPey", probability=0.72)
+        self.assertEqual(repair_vocabulary("Bayar pakai GoPey", [word], "GoPay, QRIS"), "Bayar pakai GoPay")
+
+        calls = []
+        seg = SimpleNamespace(
+            text="Tolong cek Telkom University ya",
+            no_speech_prob=0.05,
+            avg_logprob=-0.2,
+            tokens=[1, 2, 3],
+            words=[SimpleNamespace(word=" Tolong", start=0.0, end=0.3, probability=0.95)],
+        )
+
+        def transcribe(audio, **options):
+            calls.append(options)
+            return iter([seg]), SimpleNamespace(language="id")
+
+        worker = Worker()
+        worker.prepare = lambda language=None: None
+        worker.model_name = "whisper-turbo-id"
+        worker.engine.whisper = SimpleNamespace(transcribe=transcribe)
+        worker.process({
+            "command": "recognize",
+            "id": 2,
+            "samples": [1500] * 32000,
+            "language": "id",
+            "final": True,
+            "accuracy": True,
+            "vocabulary": "Telkom University, GoPay",
+            "previous_text": "Kemarin kita ketemu di kampus",
+        })
+        self.assertEqual(calls[0]["temperature"], (0.0, 0.2, 0.4, 0.6))
+        self.assertEqual(calls[0]["best_of"], 5)
+        self.assertAlmostEqual(calls[0]["patience"], 1.5)
+        self.assertAlmostEqual(calls[0]["log_prob_threshold"], -1.25)
+        self.assertIn("ketemu di kampus", calls[0]["initial_prompt"])
+        self.assertIn("Telkom University", calls[0]["initial_prompt"])
+
+    def test_cuda_fallback_resets_after_cooldown(self):
+        import time
+        from tempfile import TemporaryDirectory
+        with TemporaryDirectory() as tmp:
+            worker = Worker(model_root=tmp)
+            worker.force_cpu = True
+            worker.cpu_fallback_at = time.monotonic() - 125.0
+            worker.engine.whisper = SimpleNamespace(close=lambda: None)
+            worker.model_name = "whisper-turbo"
+            try:
+                worker.prepare(language="en")
+            except Exception:
+                pass
+            self.assertFalse(worker.force_cpu)
+            self.assertIsNone(worker.cpu_fallback_at)
 
 
 if __name__ == "__main__":

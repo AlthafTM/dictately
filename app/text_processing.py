@@ -209,6 +209,32 @@ def cap_vocabulary_prompt(vocabulary: str, snippets=None, max_chars: int = WHISP
     return ", ".join(kept)
 
 
+def build_initial_prompt(previous_text: str = "", hotwords: str = "", max_chars: int = 480) -> str | None:
+    """Combine recent dictated context and vocabulary hints within Whisper's 223-token prompt window."""
+    context = re.sub(r"\s+", " ", str(previous_text or "")).strip()
+    if len(context) > 200:
+        # Keep the trailing clause/sentence on a word boundary so Whisper sees active topic context.
+        tail = context[-200:]
+        space = tail.find(" ")
+        context = tail[space + 1:].strip() if space > 0 else tail.strip()
+    vocab = re.sub(r"\s+", " ", str(hotwords or "")).strip()
+    parts = [part for part in (context, vocab) if part]
+    if not parts:
+        return None
+    joined = " ".join(parts)
+    if len(joined) <= max_chars:
+        return joined
+    if context and vocab:
+        budget = max(0, max_chars - len(vocab) - 1)
+        if budget >= 24:
+            trimmed = context[-budget:]
+            space = trimmed.find(" ")
+            trimmed = trimmed[space + 1:].strip() if space > 0 else trimmed.strip()
+            return f"{trimmed} {vocab}".strip()
+        return vocab[:max_chars].strip() or None
+    return joined[-max_chars:].strip() or None
+
+
 def filter_dictionary_echo(text: str, sent_prompt: str, dictionary_terms=None) -> str:
     """Discard full-prompt dictionary echoes and strip trailing dictionary recitals."""
     if not text or not sent_prompt:

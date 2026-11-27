@@ -77,21 +77,21 @@ Setup builds the native controller if `Dictately.exe` is missing. Use `-Rebuild`
 1. Launch Dictately; find the waveform icon in the Windows notification area, possibly under the hidden-icons arrow
 2. Use your language-selection shortcut and click, scroll, or drag the compact panel, or say “English” or “Indonesia”
 3. Click the message box, document, or other editable field where you want the words
-4. Use your dictation shortcut once and speak normally; the waveform opens and responds to your microphone
-5. Use your dictation shortcut again to stop the microphone and finish the last phrase
+4. **Hold** your dictation shortcut (F12 by default) and speak normally; the waveform opens immediately and responds to your microphone
+5. **Release** the shortcut when done to finish the last phrase (you can also switch to **Press to start / stop (Toggle)** mode in **Tray → Keyboard shortcuts**)
 
 | Control | Action |
 | --- | --- |
-| Your dictation shortcut | Start or stop recording |
+| Your dictation shortcut | Hold to speak (Push-to-talk default), or press to start/stop in Toggle mode |
 | Your language-selection shortcut | Open / close the voice-and-mouse language picker |
 | Esc | Cancel unfinished speech; text already inserted stays |
 | Tray icon | Language, history/settings, startup, and quit |
 | History & settings | Copy transcripts, clear history, edit vocabulary, accuracy, cleanup, and startup |
-| Keyboard shortcuts | Click a shortcut, press your preferred key/combination, then save |
+| Keyboard shortcuts | Switch Push-to-talk / Toggle mode, click a shortcut, press your preferred key/combination, then save |
 | Audio & appearance | Choose your microphone and waveform position, then save |
 | `scripts/windows/Stop Dictately.ps1` | Stop the installed controller from PowerShell |
 
-**Default Windows shortcuts: F12 for dictation, F10 for language selection.** Both can be changed from **Tray → Keyboard shortcuts**; setup also offers the dictation and language bindings. A **Dictately Settings** Start-menu launcher opens the same editor. Esc cancels shortcut capture; duplicate assignments and modifier-only shortcuts are rejected. Windows-reserved shortcuts may be unavailable, and assigning a normal typing key consumes that key globally while Dictately runs.
+**Default Windows shortcuts: Hold F12 for push-to-talk dictation, F10 for language selection.** Both can be changed from **Tray → Keyboard shortcuts**, where you can also choose between Push-to-talk and Toggle mode; setup also offers the dictation and language bindings. A **Dictately Settings** Start-menu launcher opens the same editor. Esc cancels shortcut capture; duplicate assignments and modifier-only shortcuts are rejected. Windows-reserved shortcuts may be unavailable, and assigning a normal typing key consumes that key globally while Dictately runs.
 
 Open **Tray → Audio & appearance** to select **Bottom left / center / right** or **Top left / center / right**. The waveform and Windows language picker use that location on the active monitor, with room for the taskbar. **Bottom center** is the default. Changes apply to the next recording or picker opening.
 

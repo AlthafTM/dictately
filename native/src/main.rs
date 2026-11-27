@@ -22,8 +22,15 @@ const CANCEL: u32 = WM_APP + 2;
 const TRAY: u32 = WM_APP + 3;
 const QUIT: u32 = WM_APP + 4;
 const LANGUAGE: u32 = WM_APP + 5;
+const PTT_START: u32 = WM_APP + 6;
+const PTT_STOP: u32 = WM_APP + 7;
+const POWER_BROADCAST: u32 = 0x0218;
+const PBT_RESUME_SUSPEND: WPARAM = 0x0007;
+const PBT_RESUME_AUTOMATIC: WPARAM = 0x0012;
+const PTT_RELEASE_TAIL_MS: u64 = 90;
 static HWND_ATOMIC: AtomicIsize = AtomicIsize::new(0);
 static RECORDING: AtomicBool = AtomicBool::new(false);
+static PUSH_TO_TALK: AtomicBool = AtomicBool::new(true);
 static F12_DOWN: AtomicBool = AtomicBool::new(false);
 static LANGUAGE_DOWN: AtomicBool = AtomicBool::new(false);
 // Only the Windows message-loop thread accesses APP; other threads use channels.
@@ -38,7 +45,7 @@ struct Replacement { source: String, target: String }
 #[serde(default)]
 struct Settings {
     language: String, cleanup: bool, accuracy: bool, vocabulary: String,
-    formal_indonesian: bool, save_history: bool,
+    formal_indonesian: bool, save_history: bool, push_to_talk: bool,
     snippets: Vec<Snippet>, replacements: Vec<Replacement>,
     max_recording_seconds: u32, dictation_hotkey:u32, language_hotkey:u32, overlay_position:String, microphone:String,
 }
@@ -46,7 +53,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             language: "en".into(), cleanup: true, accuracy: true, vocabulary: String::new(),
-            formal_indonesian: false, save_history: true,
+            formal_indonesian: false, save_history: true, push_to_talk: true,
             snippets: Vec::new(), replacements: Vec::new(),
             max_recording_seconds: 120, dictation_hotkey:123, language_hotkey:121,
             overlay_position:"bottom_center".into(), microphone:String::new(),
@@ -86,12 +93,90 @@ struct App {
     picker:bool, picker_pending:bool, picker_voice:Instant, picker_has_voice:bool, settings_checked:Instant,
     frame_clock:bool,picker_drag:Option<(i32,i32)>,picker_dragged:bool,picker_wheel:i32,
     fix_inflight:bool,control_request:Option<ControlRequest>,control_preview:Option<ControlMode>,recording_language:String,
+    ptt_held:bool,ptt_release_at:Option<Instant>,ptt_pending_origin:Option<Option<typing::Origin>>,
+    model_stamp:Option<Vec<u8>>,pending_worker_reload:bool,allow_warmup:bool,
+}
+
+fn read_model_stamp(root: &PathBuf) -> Option<Vec<u8>> {
+    fs::read(root.join("models/selected-model.json")).ok()
 }
 
 impl App {
     fn apply_hotkeys(&self) {
         hotkeys::DICTATION.store(self.settings.dictation_hotkey,Ordering::Relaxed);
         hotkeys::LANGUAGE.store(self.settings.language_hotkey,Ordering::Relaxed);
+        PUSH_TO_TALK.store(self.settings.push_to_talk,Ordering::Relaxed);
+    }
+    unsafe fn reload_worker(&mut self, reason: &str) {
+        self.log(reason);
+        if self.recording || self.finishing {
+            self.pending_worker_reload = true;
+            return;
+        }
+        self.pending_worker_reload = false;
+        let _ = self.requests.send(worker::Work::Unload);
+        self.worker_loaded = false;
+        self.inflight = false;
+        self.speech_model = "loading".into();
+        if self.allow_warmup {
+            self.worker_loaded = true;
+            self.inflight = true;
+            self.last_work = Instant::now();
+            let _ = self.requests.send(worker::Work::Request(
+                self.session,
+                json!({"command":"prepare", "id":0, "cleanup":self.settings.cleanup, "language":self.settings.language}),
+                None,
+            ));
+        }
+        self.status(if self.picker { "language_picker" } else { "ready" });
+    }
+    unsafe fn on_system_resume(&mut self) {
+        hotkeys::initialize();
+        F12_DOWN.store(false, Ordering::Relaxed);
+        LANGUAGE_DOWN.store(false, Ordering::Relaxed);
+        if self.ptt_held {
+            self.ptt_held = false;
+            self.ptt_pending_origin = None;
+            if self.recording && !self.picker {
+                self.ptt_release_at = None;
+                self.stop(false);
+            }
+        }
+        self.reload_worker("System resumed from sleep; recycling speech worker");
+    }
+    unsafe fn ptt_start(&mut self, expected: HWND) {
+        if self.screenshot_at.is_some() || self.screenshot_watch.is_some() {
+            self.screenshot_resume = false; self.screenshot_started = None; self.screenshot_at = None; self.screenshot_watch = None;
+            self.status("ready");
+            return;
+        }
+        self.ptt_held = true;
+        self.ptt_release_at = None;
+        self.control_request = None;
+        self.control_preview = None;
+        if self.picker { self.close_picker(); }
+        if self.recording { return; }
+        let origin = typing::Typer::origin(expected);
+        if self.finishing || self.mic_stopping {
+            self.ptt_pending_origin = Some(origin);
+            self.display.set_picker(false);
+            self.display.recording = false;
+            self.display.show("Listening", "");
+            self.hide_at = None;
+            SetTimer(self.display.hwnd, 1, 16, None);
+            self.timer_interval = 16;
+            return;
+        }
+        self.start_origin(origin);
+    }
+    unsafe fn ptt_stop(&mut self) {
+        self.ptt_held = false;
+        self.ptt_pending_origin = None;
+        if self.recording && !self.picker {
+            self.ptt_release_at = Some(Instant::now() + Duration::from_millis(PTT_RELEASE_TAIL_MS));
+            SetTimer(self.display.hwnd, 1, 16, None);
+            self.timer_interval = 16;
+        }
     }
     unsafe fn queue_control(&mut self,key:ControlMode,expected:HWND) {
         if self.screenshot_at.is_some()||self.screenshot_watch.is_some() {
@@ -184,6 +269,7 @@ impl App {
         let tip = wide("Dictately · F12 · English only"); tray.szTip[..tip.len()].copy_from_slice(&tip);
         Shell_NotifyIconW(NIM_ADD, &tray);
         let now = Instant::now();
+        let model_stamp = read_model_stamp(&root);
         let mut app = Self { settings: Settings::load(&data), input: typing::InputWorker::new(), display: Display::new(hwnd), root, data,
             editor_locked: false, input_inflight: false, finish_attempted:false,input_blocked:false,input_wait:None,input_failures:0, recent: String::new(), recent_at: now, correction_wait: false, phrase_start: true,
             requests, responses, capture: None, microphone: audio::Microphone::new(), mic_starting:false, mic_stopping:false,
@@ -193,7 +279,8 @@ impl App {
             worker_loaded: false, hide_at: None, screenshot_at:None, screenshot_resume:false,screenshot_started:None,screenshot_watch:None, timer_interval:1000, raw: String::new(), cleaned: String::new(), pending: String::new(),
             inserted: 0, languages: HashSet::new(), speech_model:"loading".into(), tray, icon, record_icon, test_samples, test_offset: 0, test_target: None,
             picker:false,picker_pending:false,picker_voice:now,picker_has_voice:false,settings_checked:now,frame_clock:false,picker_drag:None,picker_dragged:false,picker_wheel:0,
-            fix_inflight:false,control_request:None,control_preview:None,recording_language:"en".into() };
+            fix_inflight:false,control_request:None,control_preview:None,recording_language:"en".into(),
+            ptt_held:false,ptt_release_at:None,ptt_pending_origin:None,model_stamp,pending_worker_reload:false,allow_warmup:false };
         app.apply_hotkeys();
         app.display.position=app.settings.overlay_position.clone();
         app.display.prewarm_picker();
@@ -202,7 +289,11 @@ impl App {
     unsafe fn update_tip(&mut self) {
         self.tray.szTip.fill(0);
         let language = match self.settings.language.as_str() {"id"=>"Indonesian",_=>"English"};
-        let state = if self.picker {"Language picker".to_string()} else if self.recording {"Recording".into()} else if self.finishing {"Finishing".into()} else {hotkeys::name(self.settings.dictation_hotkey)};
+        let state = if self.picker {"Language picker".to_string()}
+            else if self.recording {"Recording".into()}
+            else if self.finishing {"Finishing".into()}
+            else if self.settings.push_to_talk {format!("Hold {}", hotkeys::name(self.settings.dictation_hotkey))}
+            else {hotkeys::name(self.settings.dictation_hotkey)};
         let tip = wide(&format!("Dictately · {language} · {state}"));
         self.tray.szTip[..tip.len()].copy_from_slice(&tip);
         Shell_NotifyIconW(NIM_MODIFY, &self.tray);
@@ -216,6 +307,7 @@ impl App {
         let value = json!({"pid": std::process::id(), "state": state, "version":env!("CARGO_PKG_VERSION"), "speech_model":self.speech_model, "app":"Dictately", "hwnd":self.display.hwnd as usize,
             "at_unix":unix(), "live_commits":self.inserted, "language":self.settings.language, "worker_loaded":self.worker_loaded,
             "language_picker":self.picker,"screenshot_pending":self.screenshot_at.is_some()||self.screenshot_watch.is_some(),"dictation_hotkey":self.settings.dictation_hotkey,"language_hotkey":self.settings.language_hotkey,
+            "push_to_talk":self.settings.push_to_talk,
             "pipeline_stage":self.display.pipeline.stage.name(),"picker_pending":self.picker_pending,
             "overlay_position":self.settings.overlay_position,"preferred_microphone":self.settings.microphone,
             "engine_ready":self.worker_loaded && !self.inflight, "editor_locked":self.editor_locked,"input_blocked":self.input_blocked, "pending_characters":self.pending.chars().count(),
@@ -266,10 +358,15 @@ impl App {
         self.correction_wait=false; self.fix_inflight=false; self.phrase_start=true;
         if !valid && self.test_target != Some(0) {
             self.log("No keyboard input destination at F12");
-            self.notice("Input needs attention", &format!("Click a text box, then press {} again.",hotkeys::name(self.settings.dictation_hotkey)), 3);
+            let hint = if self.settings.push_to_talk {
+                format!("Click a text box, then hold {} to speak.", hotkeys::name(self.settings.dictation_hotkey))
+            } else {
+                format!("Click a text box, then press {} again.", hotkeys::name(self.settings.dictation_hotkey))
+            };
+            self.notice("Input needs attention", &hint, 3);
             return;
         }
-        self.settings = Settings::load(&self.data);self.recording_language=self.settings.language.clone();
+        self.settings = Settings::load(&self.data); self.apply_hotkeys(); self.recording_language=self.settings.language.clone();
         self.display.position=self.settings.overlay_position.clone();
         self.request_id = 0; self.buffer.clear(); self.raw.clear(); self.cleaned.clear();
         self.pending.clear(); self.inserted = 0; self.languages.clear(); self.total_samples = 0;
@@ -343,6 +440,11 @@ impl App {
     }
     unsafe fn stop(&mut self, cancel: bool) {
         if self.picker {self.close_picker();return;}
+        self.ptt_release_at = None;
+        if cancel {
+            self.ptt_held = false;
+            self.ptt_pending_origin = None;
+        }
         if !self.recording { return; }
         self.collect_audio();
         if self.test_samples.is_none() {
@@ -393,18 +495,18 @@ impl App {
         if self.finishing && self.buffer.len() < 3200 { self.finish(); return; }
         if !self.recording && !self.finishing { return; }
         let final_chunk = self.finishing;
-        let paused = self.last_voice.elapsed() > Duration::from_millis(750);
+        let paused = self.last_voice.elapsed() > Duration::from_millis(550);
         let command_probe=self.raw.is_empty()&&self.pending.is_empty();
-        let (minimum,interval,growth)=if command_probe {(6400,250,4000)}else{(if paused {16000}else{16000*3},900,12000)};
+        let (minimum,interval,growth)=if command_probe {(6400,220,3600)}else{(if paused {12800}else{28800},550,8000)};
         if !final_chunk && (self.buffer.len()<minimum || self.last_request.elapsed()<Duration::from_millis(interval)
             || self.buffer.len()<self.last_sent_len+growth) {return;}
         let len = self.buffer.len();
-        let lookahead = if self.last_voice.elapsed() > Duration::from_millis(650) { 0.15 } else { 0.8 };
+        let lookahead = if self.last_voice.elapsed() > Duration::from_millis(500) { 0.15 } else { 0.7 };
         let cutoff = len as f32 / 16000. - if final_chunk { 0. } else { lookahead };
         self.request_id += 1;
         let request = json!({"command":"recognize", "id":self.request_id,
             "final":final_chunk, "flush":paused || self.buffer.len() >= 16000*18, "commit_before":cutoff.max(0.), "language":self.recording_language,
-            "at_pause":self.last_voice.elapsed() > Duration::from_millis(650),"pause_seconds":self.last_voice.elapsed().as_secs_f32(),
+            "at_pause":self.last_voice.elapsed() > Duration::from_millis(500),"pause_seconds":self.last_voice.elapsed().as_secs_f32(),
             "skip_before":self.skip_samples as f32 / 16000.,
             "vocabulary":self.settings.vocabulary, "cleanup":self.settings.cleanup, "accuracy":self.settings.accuracy,
             "formal_indonesian":self.settings.formal_indonesian, "snippets":self.settings.snippets, "replacements":self.settings.replacements,
@@ -640,11 +742,48 @@ impl App {
     }
     unsafe fn tick(&mut self) {
         self.apply_controls();self.receive_audio();
+        if self.ptt_held && self.settings.push_to_talk && self.test_samples.is_none() && self.recording && !self.picker && self.started.elapsed() > Duration::from_millis(250) {
+            if GetAsyncKeyState((self.settings.dictation_hotkey & 255) as i32) >= 0 {
+                F12_DOWN.store(false, Ordering::Relaxed);
+                self.ptt_stop();
+            }
+        }
+        if self.ptt_release_at.is_some_and(|at| Instant::now() >= at) {
+            self.ptt_release_at = None;
+            if self.recording && !self.picker { self.stop(false); }
+        }
+        if !self.recording && !self.finishing && !self.mic_stopping && self.ptt_held {
+            if let Some(origin) = self.ptt_pending_origin.take() {
+                self.start_origin(origin);
+            }
+        }
         if !self.recording && !self.finishing && self.settings_checked.elapsed()>Duration::from_millis(500) {
             let settings=Settings::load(&self.data);
-            let changed=settings.dictation_hotkey!=self.settings.dictation_hotkey || settings.language_hotkey!=self.settings.language_hotkey || settings.language!=self.settings.language || settings.overlay_position!=self.settings.overlay_position || settings.microphone!=self.settings.microphone;
+            let language_changed = settings.language != self.settings.language;
+            let changed = settings.dictation_hotkey!=self.settings.dictation_hotkey
+                || settings.language_hotkey!=self.settings.language_hotkey
+                || settings.push_to_talk!=self.settings.push_to_talk
+                || language_changed
+                || settings.overlay_position!=self.settings.overlay_position
+                || settings.microphone!=self.settings.microphone;
             self.settings=settings;self.apply_hotkeys();self.settings_checked=Instant::now();
             if !self.display.is_visible() {self.display.position=self.settings.overlay_position.clone();}
+            let current_stamp = read_model_stamp(&self.root);
+            if current_stamp != self.model_stamp {
+                self.model_stamp = current_stamp;
+                self.pending_worker_reload = true;
+            }
+            if self.pending_worker_reload {
+                self.reload_worker("Selected speech model changed; reloading worker");
+            } else if language_changed && self.worker_loaded && !self.inflight && self.allow_warmup {
+                self.inflight = true;
+                self.last_work = Instant::now();
+                let _ = self.requests.send(worker::Work::Request(
+                    self.session,
+                    json!({"command":"prepare", "id":0, "cleanup":self.settings.cleanup, "language":self.settings.language}),
+                    None,
+                ));
+            }
             if changed {self.update_tip();self.status("ready");}
         }
         if self.recording {
@@ -660,6 +799,14 @@ impl App {
         // A hidden overlay has no animation frames. Drain deferred controls on
         // the controller tick after speech/microphone completions, not in frame().
         self.apply_controls();
+        if !self.recording && !self.finishing && !self.mic_stopping && self.ptt_held {
+            if let Some(origin) = self.ptt_pending_origin.take() {
+                self.start_origin(origin);
+            }
+        }
+        if !self.recording && !self.finishing && self.pending_worker_reload {
+            self.reload_worker("Applying deferred speech worker reload");
+        }
         if (!self.recording||self.picker) && !self.finishing && !self.inflight && self.worker_loaded && self.last_work.elapsed() >= Duration::from_secs(90) {
             let _ = self.requests.send(worker::Work::Unload); self.worker_loaded = false; self.status(if self.picker {"language_picker"}else{"ready"});
         }
@@ -676,7 +823,10 @@ impl App {
             if watch.complete(Instant::now(),visible)&&!self.mic_stopping {self.screenshot_watch=None;self.resume_screenshot();}
         }
         // Audio/controller polling may slow down; animation never follows it.
-        let interval = if self.control_request.is_some() {16} else if self.screenshot_watch.is_some() {50} else if self.screenshot_at.is_some() {16} else if !self.recording && !self.finishing && !self.display.is_visible() { 1000 }
+        let interval = if self.control_request.is_some() || self.ptt_release_at.is_some() || self.ptt_pending_origin.is_some() {16}
+            else if self.screenshot_watch.is_some() {50}
+            else if self.screenshot_at.is_some() {16}
+            else if !self.recording && !self.finishing && !self.display.is_visible() { 1000 }
             else if !self.display.is_visible() || self.recording && self.started.elapsed().as_millis() > 1200 { 33 } else { 16 };
         if interval != self.timer_interval { SetTimer(self.display.hwnd, 1, interval, None); self.timer_interval = interval; }
     }
@@ -774,12 +924,23 @@ unsafe extern "system" fn keyboard(code: i32, wp: WPARAM, lp: LPARAM) -> LRESULT
                     // Recover modifier releases missed across lock screens or lost hook events.
                     hotkeys::initialize();
                     let chord=(hotkeys::modifiers()<<8)|key.vkCode;
-                    if chord==dictation {F12_DOWN.store(true,Ordering::Relaxed);return 1;}
+                    if chord==dictation {
+                        if PUSH_TO_TALK.load(Ordering::Relaxed) {
+                            if !F12_DOWN.swap(true,Ordering::Relaxed) {
+                                PostMessageW(HWND_ATOMIC.load(Ordering::Relaxed) as HWND,PTT_START,GetForegroundWindow() as WPARAM,0);
+                            }
+                        } else {
+                            F12_DOWN.store(true,Ordering::Relaxed);
+                        }
+                        return 1;
+                    }
                     if chord==language {LANGUAGE_DOWN.store(true,Ordering::Relaxed);return 1;}
                     if F12_DOWN.load(Ordering::Relaxed)||LANGUAGE_DOWN.load(Ordering::Relaxed) {return 1;}
                 } else if up {
                     if key.vkCode==dictation&255 && F12_DOWN.swap(false,Ordering::Relaxed) {
-                        PostMessageW(HWND_ATOMIC.load(Ordering::Relaxed) as HWND,TOGGLE,GetForegroundWindow() as WPARAM,0);return 1;
+                        let msg = if PUSH_TO_TALK.load(Ordering::Relaxed) { PTT_STOP } else { TOGGLE };
+                        let param = if msg == TOGGLE { GetForegroundWindow() as WPARAM } else { 0 };
+                        PostMessageW(HWND_ATOMIC.load(Ordering::Relaxed) as HWND,msg,param,0);return 1;
                     }
                     if key.vkCode==language&255 && LANGUAGE_DOWN.swap(false,Ordering::Relaxed) {
                         PostMessageW(HWND_ATOMIC.load(Ordering::Relaxed) as HWND,LANGUAGE,0,0);return 1;
@@ -813,8 +974,11 @@ unsafe extern "system" fn window_proc(hwnd: HWND, message: u32, wp: WPARAM, lp: 
             }
             WM_TIMER => { app.tick(); return 0; }
             TOGGLE => { app.queue_control(ControlMode::Dictation,wp as HWND); return 0; }
+            PTT_START => { app.ptt_start(wp as HWND); return 0; }
+            PTT_STOP => { app.ptt_stop(); return 0; }
             LANGUAGE => {app.queue_control(ControlMode::Picker,std::ptr::null_mut());return 0;}
             CANCEL => { app.stop(true); return 0; }
+            POWER_BROADCAST if wp == PBT_RESUME_AUTOMATIC || wp == PBT_RESUME_SUSPEND => { app.on_system_resume(); return 1; }
             WM_MOUSEWHEEL|WM_MOUSEHWHEEL if app.picker||app.picker_pending => {
                 app.picker_wheel+=((wp>>16) as u16 as i16) as i32;
                 let steps=app.picker_wheel/120;app.picker_wheel%=120;
@@ -974,6 +1138,7 @@ fn main() {
         if mouse_hook.is_null()&&!no_hooks {UnhookWindowsHookEx(hook);app.log("Input destination tracking failed");app.status("error");return;}
         // Warm the local models without opening the microphone or showing a popup.
         if !(app.test_target==Some(0) && args.iter().any(|arg|arg=="--test-no-warmup")) {
+            app.allow_warmup = true;
             app.worker_loaded = true; app.inflight = true;
             let _ = app.requests.send(worker::Work::Request(0, json!({"command":"prepare", "id":0, "cleanup":app.settings.cleanup, "language":app.settings.language}), None));
         }
@@ -1078,17 +1243,63 @@ fn main() {
     #[test] fn defaults_locked_english() {
         let defaults=Settings::default();assert_eq!(defaults.language,"en");
         assert_eq!(defaults.dictation_hotkey,123);assert_eq!(defaults.language_hotkey,121);
+        assert!(defaults.push_to_talk);
         assert_eq!(defaults.overlay_position,"bottom_center");assert!(defaults.microphone.is_empty());
     }
     #[test] fn preferences_survive_language_and_shortcut_serialization() {
-        let mut settings:Settings=serde_json::from_str(r#"{"microphone":"stable-usb-endpoint","overlay_position":"top_right","language":"id","formal_indonesian":true,"save_history":false,"snippets":[{"trigger":"salam","replacement":"Hormat saya"}],"replacements":[{"source":"jaksel","target":"Jakarta Selatan"}]}"#).unwrap();
+        let mut settings:Settings=serde_json::from_str(r#"{"microphone":"stable-usb-endpoint","overlay_position":"top_right","language":"id","formal_indonesian":true,"save_history":false,"push_to_talk":false,"snippets":[{"trigger":"salam","replacement":"Hormat saya"}],"replacements":[{"source":"jaksel","target":"Jakarta Selatan"}]}"#).unwrap();
         settings.language="en".into();settings.language_hotkey=889;
         let saved=serde_json::to_string(&settings).unwrap();
         let loaded:Settings=serde_json::from_str(&saved).unwrap();
         assert_eq!(loaded.microphone,"stable-usb-endpoint");assert_eq!(loaded.overlay_position,"top_right");
         assert_eq!(loaded.language,"en");assert_eq!(loaded.language_hotkey,889);
-        assert!(loaded.formal_indonesian);assert!(!loaded.save_history);
+        assert!(loaded.formal_indonesian);assert!(!loaded.save_history);assert!(!loaded.push_to_talk);
         assert_eq!(loaded.snippets,vec![Snippet{trigger:"salam".into(),replacement:"Hormat saya".into()}]);
         assert_eq!(loaded.replacements,vec![Replacement{source:"jaksel".into(),target:"Jakarta Selatan".into()}]);
+    }
+    #[test] fn push_to_talk_starts_immediately_honors_release_tail_and_allows_repress() {
+        unsafe {
+            let root=PathBuf::from(env!("CARGO_MANIFEST_DIR")).parent().unwrap().to_path_buf();
+            let data=root.join("qa").join(format!("ptt-control-{}-{}",std::process::id(),unix()));fs::create_dir_all(&data).unwrap();
+            let mut app=App::new(root,data,std::ptr::null_mut(),Some(vec![1000;32000]));
+            app.test_target=Some(0);
+            app.ptt_start(std::ptr::null_mut());
+            assert!(app.recording && app.ptt_held && app.control_request.is_none());
+            let session=app.session;
+            app.started=Instant::now()-Duration::from_millis(400);
+            app.buffer=vec![1000;6400];
+            app.ptt_stop();
+            assert!(app.recording && !app.ptt_held && app.ptt_release_at.is_some());
+            // Re-pressing within the 90ms tail smoothly keeps the same session alive.
+            app.ptt_start(std::ptr::null_mut());
+            assert!(app.recording && app.ptt_held && app.ptt_release_at.is_none());
+            assert_eq!(app.session,session);
+            // Releasing and letting the tail expire stops cleanly into finishing.
+            app.ptt_stop();
+            app.ptt_release_at=Some(Instant::now()-Duration::from_millis(1));
+            app.tick();
+            assert!(!app.recording && app.finishing);
+            KillTimer(app.display.hwnd,1);DestroyIcon(app.icon);DestroyIcon(app.record_icon);
+        }
+    }
+    #[test] fn sleep_resume_and_model_selection_changes_recycle_worker() {
+        unsafe {
+            let root=PathBuf::from(env!("CARGO_MANIFEST_DIR")).parent().unwrap().to_path_buf();
+            let data=root.join("qa").join(format!("resume-reload-{}-{}",std::process::id(),unix()));fs::create_dir_all(&data).unwrap();
+            let mut app=App::new(root,data,std::ptr::null_mut(),Some(vec![]));
+            app.worker_loaded=true;app.recording=true;
+            app.on_system_resume();
+            assert!(app.pending_worker_reload && app.worker_loaded,"Active recording must defer worker reload");
+            app.recording=false;
+            app.tick();
+            assert!(!app.pending_worker_reload && !app.worker_loaded,"Idle tick must apply deferred worker reload");
+            // Simulate models/selected-model.json changing on disk.
+            app.worker_loaded=true;
+            app.model_stamp=Some(b"{\"model\":\"stale\"}".to_vec());
+            app.settings_checked=Instant::now()-Duration::from_secs(2);
+            app.tick();
+            assert!(!app.worker_loaded,"Model selection change must recycle worker when idle");
+            KillTimer(app.display.hwnd,1);DestroyIcon(app.icon);DestroyIcon(app.record_icon);
+        }
     }
 }

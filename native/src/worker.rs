@@ -1,5 +1,6 @@
 use std::{fs::OpenOptions, io::{BufRead, BufReader, Write}, os::windows::{io::AsRawHandle, process::CommandExt}, path::PathBuf,
-    process::{Child, ChildStdin, ChildStdout, Command, Stdio}, sync::{mpsc::{self, Receiver, Sender},Arc,atomic::{AtomicU64,Ordering}}};
+    process::{Child, ChildStdin, Command, Stdio}, sync::{mpsc::{self, Receiver, RecvTimeoutError, Sender}, Arc, atomic::{AtomicU64, Ordering}},
+    time::Duration};
 use serde_json::{json, Value};
 use windows_sys::Win32::{Foundation::{CloseHandle, HANDLE}, System::JobObjects::*};
 
@@ -13,6 +14,22 @@ impl Requests {
     pub fn cancel_before(&self,session:u64) {self.latest.store(session,Ordering::Release);}
 }
 pub struct Event { pub session: u64, pub value: Value }
+
+fn request_timeout(value: &Value) -> Duration {
+    match value["command"].as_str().unwrap_or("") {
+        "prepare" => Duration::from_secs(60),
+        _ => Duration::from_secs(25),
+    }
+}
+
+fn read_line_timeout(lines: &Receiver<Result<Option<String>, String>>, timeout: Duration) -> Result<String, String> {
+    match lines.recv_timeout(timeout) {
+        Ok(Ok(Some(line))) => Ok(line),
+        Ok(Ok(None)) | Err(RecvTimeoutError::Disconnected) => Err("Speech worker stopped; restarting automatically".into()),
+        Ok(Err(error)) => Err(error),
+        Err(RecvTimeoutError::Timeout) => Err("Speech worker timed out; restarting engine".into()),
+    }
+}
 
 fn write_request(output: &mut impl Write, metadata: &Value, samples: Option<&[i16]>) -> Result<(), String> {
     let mut header = metadata.clone();
@@ -38,7 +55,7 @@ fn write_request(output: &mut impl Write, metadata: &Value, samples: Option<&[i1
     output.flush().map_err(|e| e.to_string())
 }
 
-struct Process { child: Child, input: ChildStdin, output: BufReader<ChildStdout>, job: HANDLE }
+struct Process { child: Child, input: ChildStdin, lines: Receiver<Result<Option<String>, String>>, job: HANDLE }
 impl Process {
     fn start(root: &PathBuf, data: &PathBuf) -> Result<Self, String> {
         let log = OpenOptions::new().create(true).append(true).open(data.join("live-worker.log")).map_err(|e| e.to_string())?;
@@ -61,15 +78,26 @@ impl Process {
                 if !job.is_null() { CloseHandle(job); }
                 return Err("Could not manage local inference worker".into());
             }
-            Ok(Self { input: child.stdin.take().unwrap(), output: BufReader::new(child.stdout.take().unwrap()), child, job })
+            let stdout = child.stdout.take().unwrap();
+            let (tx, lines) = mpsc::channel();
+            // Dedicated reader allows bounded request timeouts; dropping Process kills the job and closes stdout.
+            std::thread::spawn(move || {
+                let mut reader = BufReader::new(stdout);
+                loop {
+                    let mut line = String::new();
+                    match reader.read_line(&mut line) {
+                        Ok(0) => { let _ = tx.send(Ok(None)); break; }
+                        Ok(_) => { if tx.send(Ok(Some(line))).is_err() { break; } }
+                        Err(error) => { let _ = tx.send(Err(error.to_string())); break; }
+                    }
+                }
+            });
+            Ok(Self { input: child.stdin.take().unwrap(), lines, child, job })
         }
     }
     fn request(&mut self, value: &Value, samples: Option<&[i16]>) -> Result<Value, String> {
         write_request(&mut self.input, value, samples)?;
-        let mut line = String::new();
-        if self.output.read_line(&mut line).map_err(|e| e.to_string())? == 0 {
-            return Err("Speech worker stopped; try F12 again".into());
-        }
+        let line = read_line_timeout(&self.lines, request_timeout(value))?;
         serde_json::from_str(&line).map_err(|e| format!("Speech worker response: {e}"))
     }
 }
@@ -119,5 +147,14 @@ mod tests {
         frame.clear();
         write_request(&mut frame, &json!({"command":"prepare"}), None).unwrap();
         assert_eq!(frame, b"{\"command\":\"prepare\"}\n");
+    }
+
+    #[test]
+    fn stalled_worker_times_out_instead_of_blocking_forever() {
+        let (_tx, rx) = mpsc::channel::<Result<Option<String>, String>>();
+        let err = read_line_timeout(&rx, Duration::from_millis(20)).unwrap_err();
+        assert!(err.contains("timed out"), "{err}");
+        assert_eq!(request_timeout(&json!({"command":"prepare"})), Duration::from_secs(60));
+        assert_eq!(request_timeout(&json!({"command":"recognize"})), Duration::from_secs(25));
     }
 }

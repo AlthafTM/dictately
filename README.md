@@ -98,9 +98,9 @@ Follow the [step-by-step source setup guide](docs/MACOS-LINUX.md). These version
 
 1. Open the language picker and select **English** or **Indonesia** by voice, clicking, scrolling, or dragging
 2. Click the text field where you want to type
-3. Start dictation, speak normally, then stop to finish the last phrase
+3. **Hold F12** while speaking and release to finish the last phrase (or switch to Toggle mode in **Tray → Keyboard shortcuts**)
 
-**Default shortcuts:** F12 for dictation, F10 for language selection. Change them in **Tray → Keyboard shortcuts**. Use **Tray → Audio & appearance** to choose a microphone or move the overlay.
+**Default shortcuts:** Hold **F12** for push-to-talk dictation, **F10** for language selection. Change shortcuts or switch between Push-to-talk and Toggle mode in **Tray → Keyboard shortcuts**. Use **Tray → Audio & appearance** to choose a microphone or move the overlay.
 
 Text appears in confirmed phrases rather than word by word. The first phrase can take longer while the model loads. Editor compatibility varies.
 

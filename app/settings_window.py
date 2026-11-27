@@ -17,6 +17,10 @@ ROOT = app_root()
 DATA = user_data_dir()
 BG, CARD, FIELD, TEXT, MUTED, ACCENT = "#111111", "#1d1d1d", "#2a2a2a", "#f1f1f1", "#aaaaaa", "#e5e5e5"
 LANGUAGES = {"English only": "en", "Indonesian only": "id"}
+DICTATION_MODES = {
+    "Hold to speak (Push-to-talk)": True,
+    "Press to start / stop (Toggle)": False,
+}
 
 
 def read(path, default):
@@ -249,17 +253,25 @@ class Window:
         if not valid_shortcut(self.language_hotkey) or self.language_hotkey == self.dictation_hotkey:
             self.dictation_hotkey = DICTATION_DEFAULT
             self.language_hotkey = LANGUAGE_DEFAULT
+        ptt_enabled = bool(current.get("push_to_talk", True))
+        self.dictation_mode = tk.StringVar(
+            value=next((label for label, flag in DICTATION_MODES.items() if flag == ptt_enabled), next(iter(DICTATION_MODES)))
+        )
         ttk.Label(shortcuts, text="Make Dictately fit your keyboard", font=("Segoe UI", 15, "bold")).pack(anchor="w", pady=(0, 10))
-        ttk.Label(shortcuts, text="Click a shortcut, then press a key or combination. These shortcuts work globally.", style="Muted.TLabel").pack(anchor="w", pady=(0, 25))
+        ttk.Label(shortcuts, text="Choose push-to-talk (hold to speak) or toggle mode, then pick global shortcuts.", style="Muted.TLabel").pack(anchor="w", pady=(0, 18))
+        mode_row = ttk.Frame(shortcuts)
+        mode_row.pack(fill="x", pady=(0, 14))
+        ttk.Label(mode_row, text="Dictation mode").pack(side="left")
+        ttk.Combobox(mode_row, values=list(DICTATION_MODES), textvariable=self.dictation_mode, state="readonly", width=32, font=("Segoe UI", 10)).pack(side="right")
         self.shortcut_buttons = {}
-        for field, label in [("dictation_hotkey", "Open / close microphone"), ("language_hotkey", "Choose language")]:
+        for field, label in [("dictation_hotkey", "Dictation shortcut"), ("language_hotkey", "Choose language")]:
             row = ttk.Frame(shortcuts)
             row.pack(fill="x", pady=8)
             ttk.Label(row, text=label).pack(side="left")
             button = ttk.Button(row, text=shortcut_name(getattr(self, field)), command=lambda name=field: self.assign_shortcut(name))
             button.pack(side="right")
             self.shortcut_buttons[field] = button
-        self.shortcut_feedback = tk.StringVar(value="Defaults: F12 dictation · F10 language")
+        self.shortcut_feedback = tk.StringVar(value="Defaults: Hold F12 to speak (Push-to-talk) · F10 language")
         ttk.Label(shortcuts, textvariable=self.shortcut_feedback, style="Muted.TLabel").pack(anchor="w", pady=(20, 10))
         actions = ttk.Frame(shortcuts)
         actions.pack(fill="x", pady=12)
@@ -320,7 +332,7 @@ class Window:
                 from select_model import select_model
                 select_model(default_choice, for_indonesian=False, root=ROOT)
                 select_model(id_choice, for_indonesian=True, root=ROOT)
-                msg = f"Saved models: default={default_choice}" + (f", Indonesian={id_choice}" if id_choice != "none" else " (shared)") + ". Restart Dictately or wait for idle reload."
+                msg = f"Saved models: default={default_choice}" + (f", Indonesian={id_choice}" if id_choice != "none" else " (shared)") + ". Dictately reloads automatically when idle."
             except Exception as exc:
                 msg = f"Model update failed: {exc}"
 
@@ -445,6 +457,7 @@ class Window:
     def reset_shortcuts(self):
         self.dictation_hotkey = DICTATION_DEFAULT
         self.language_hotkey = LANGUAGE_DEFAULT
+        self.dictation_mode.set(next(iter(DICTATION_MODES)))
         for field, button in self.shortcut_buttons.items():
             button.configure(text=shortcut_name(getattr(self, field)))
         self.shortcut_feedback.set("Defaults restored · press Save shortcuts to apply")
@@ -455,7 +468,11 @@ class Window:
             self.shortcut_feedback.set("Choose two different valid shortcuts")
             return
         current = read(DATA / "settings.json", {})
-        current.update(dictation_hotkey=self.dictation_hotkey, language_hotkey=self.language_hotkey)
+        current.update(
+            dictation_hotkey=self.dictation_hotkey,
+            language_hotkey=self.language_hotkey,
+            push_to_talk=DICTATION_MODES[self.dictation_mode.get()],
+        )
         write(DATA / "settings.json", current)
         self.shortcut_feedback.set("Saved · active when the current recording finishes")
 
