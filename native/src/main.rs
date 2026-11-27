@@ -32,6 +32,7 @@ static HWND_ATOMIC: AtomicIsize = AtomicIsize::new(0);
 static RECORDING: AtomicBool = AtomicBool::new(false);
 static PUSH_TO_TALK: AtomicBool = AtomicBool::new(true);
 static F12_DOWN: AtomicBool = AtomicBool::new(false);
+static LAST_PTT_DOWN_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 static LANGUAGE_DOWN: AtomicBool = AtomicBool::new(false);
 // Only the Windows message-loop thread accesses APP; other threads use channels.
 static mut APP: *mut App = std::ptr::null_mut();
@@ -357,6 +358,8 @@ impl App {
         self.editor_locked=false;self.input_inflight=true;self.finish_attempted=false;self.last_insert=Instant::now();
         self.correction_wait=false; self.fix_inflight=false; self.phrase_start=true;
         if !valid && self.test_target != Some(0) {
+            self.ptt_held = false;
+            self.ptt_release_at = None;
             self.log("No keyboard input destination at F12");
             let hint = if self.settings.push_to_talk {
                 format!("Click a text box, then hold {} to speak.", hotkeys::name(self.settings.dictation_hotkey))
@@ -742,12 +745,6 @@ impl App {
     }
     unsafe fn tick(&mut self) {
         self.apply_controls();self.receive_audio();
-        if self.ptt_held && self.settings.push_to_talk && self.test_samples.is_none() && self.recording && !self.picker && self.started.elapsed() > Duration::from_millis(250) {
-            if GetAsyncKeyState((self.settings.dictation_hotkey & 255) as i32) >= 0 {
-                F12_DOWN.store(false, Ordering::Relaxed);
-                self.ptt_stop();
-            }
-        }
         if self.ptt_release_at.is_some_and(|at| Instant::now() >= at) {
             self.ptt_release_at = None;
             if self.recording && !self.picker { self.stop(false); }
@@ -926,8 +923,12 @@ unsafe extern "system" fn keyboard(code: i32, wp: WPARAM, lp: LPARAM) -> LRESULT
                     let chord=(hotkeys::modifiers()<<8)|key.vkCode;
                     if chord==dictation {
                         if PUSH_TO_TALK.load(Ordering::Relaxed) {
-                            if !F12_DOWN.swap(true,Ordering::Relaxed) {
-                                PostMessageW(HWND_ATOMIC.load(Ordering::Relaxed) as HWND,PTT_START,GetForegroundWindow() as WPARAM,0);
+                            let now_ms = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as u64;
+                            let prev_ms = LAST_PTT_DOWN_MS.swap(now_ms, Ordering::Relaxed);
+                            let was_down = F12_DOWN.swap(true, Ordering::Relaxed);
+                            let stale_lost_up = was_down && !RECORDING.load(Ordering::Relaxed) && now_ms.saturating_sub(prev_ms) > 1200;
+                            if !was_down || stale_lost_up {
+                                PostMessageW(HWND_ATOMIC.load(Ordering::Relaxed) as HWND, PTT_START, GetForegroundWindow() as WPARAM, 0);
                             }
                         } else {
                             F12_DOWN.store(true,Ordering::Relaxed);
@@ -1274,6 +1275,11 @@ fn main() {
             app.ptt_start(std::ptr::null_mut());
             assert!(app.recording && app.ptt_held && app.ptt_release_at.is_none());
             assert_eq!(app.session,session);
+            // A held PTT key must stay recording across ticks even when GetAsyncKeyState
+            // does not see a swallowed WH_KEYBOARD_LL key.
+            app.started=Instant::now()-Duration::from_secs(1);
+            app.tick();
+            assert!(app.recording && app.ptt_held && app.ptt_release_at.is_none());
             // Releasing and letting the tail expire stops cleanly into finishing.
             app.ptt_stop();
             app.ptt_release_at=Some(Instant::now()-Duration::from_millis(1));
