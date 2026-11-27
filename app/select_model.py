@@ -18,8 +18,18 @@ _CT2_FILES = (
 )
 
 
-def _download_model(name: str, root: Path) -> None:
+def _model_ready(destination: Path) -> bool:
+    return (
+        all((destination / req).is_file() for req in ("model.bin", "config.json", "tokenizer.json"))
+        and any((destination / fname).is_file() for fname in ("vocabulary.json", "vocabulary.txt"))
+    )
+
+
+def _download_model(name: str, root: Path, force: bool = False) -> None:
     directory, repo = MODELS[name]
+    destination = root / "models" / directory
+    if not force and name != "turbo" and _model_ready(destination):
+        return
     if name == "turbo":
         from download_turbo import main as download
         download()
@@ -29,7 +39,6 @@ def _download_model(name: str, root: Path) -> None:
 
     # Resolve a specific revision once so all files come from one snapshot.
     revision = HfApi().model_info(repo).sha
-    destination = root / "models" / directory
     subfolder = MODEL_SUBFOLDERS.get(name)
     patterns = [f"{subfolder}/{item}" for item in _CT2_FILES] if subfolder else list(_CT2_FILES)
     snapshot_download(

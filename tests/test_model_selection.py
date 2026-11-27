@@ -88,6 +88,12 @@ class ModelSelectionTests(unittest.TestCase):
                 select_model.main()
             self.assertEqual(selected_model(root, language="id"), "whisper-turbo")
 
+            # Re-selecting an already-installed subfolder model works offline without contacting HF Hub.
+            hub.snapshot_download.side_effect = AssertionError("Should not re-download installed model")
+            with patch.object(select_model, "ROOT", root), patch("sys.argv", ["app/select_model.py", "turbo-id", "--for-indonesian"]), patch.dict("sys.modules", {"huggingface_hub": hub}):
+                select_model.main()
+            self.assertEqual(selected_model(root, language="id"), "whisper-turbo-id")
+
 
 if __name__ == "__main__":
     unittest.main()
