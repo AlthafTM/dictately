@@ -74,20 +74,36 @@ class SpeechSession:
 
 def install_model(name):
     """Download to user storage, never inside a read-only launcher bundle."""
+    import shutil
     from huggingface_hub import HfApi, snapshot_download
-    from speech_models import MODELS
+    from speech_models import MODELS, MODEL_SUBFOLDERS
     directory, repo = MODELS[name]
     revision = HfApi().model_info(repo).sha
     root = user_data_dir()
     destination = root / "models" / directory
-    snapshot_download(repo_id=repo, revision=revision, local_dir=destination,
-                      allow_patterns=["model.bin", "config.json", "tokenizer.json", "vocabulary.json", "vocabulary.txt", "preprocessor_config.json"])
+    ct2_files = ["model.bin", "config.json", "tokenizer.json", "vocabulary.json", "vocabulary.txt", "preprocessor_config.json"]
+    subfolder = MODEL_SUBFOLDERS.get(name)
+    patterns = [f"{subfolder}/{item}" for item in ct2_files] if subfolder else ct2_files
+    snapshot_download(repo_id=repo, revision=revision, local_dir=destination, allow_patterns=patterns)
+    if subfolder:
+        nested = destination / subfolder
+        for filename in ct2_files:
+            source = nested / filename
+            if source.is_file():
+                shutil.move(str(source), str(destination / filename))
+        try:
+            nested.rmdir()
+        except OSError:
+            pass
     for required in ("model.bin", "config.json", "tokenizer.json"):
         if not (destination / required).is_file():
             raise RuntimeError(f"Incomplete model download: {required}")
-    if not any((destination/name).is_file() for name in ('vocabulary.json','vocabulary.txt')):
+    if not any((destination/fname).is_file() for fname in ('vocabulary.json','vocabulary.txt')):
         raise RuntimeError('Incomplete model download: vocabulary is missing')
-    write_json(destination / "source.json", {"repo":repo, "revision":revision})
+    meta = {"repo": repo, "revision": revision}
+    if subfolder:
+        meta["subfolder"] = subfolder
+    write_json(destination / "source.json", meta)
     write_json(root / "models/selected-model.json", {"model":name})
     print(f"Selected {name}; dictation works offline after setup")
 

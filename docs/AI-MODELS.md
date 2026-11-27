@@ -6,17 +6,32 @@ Dictately runs speech recognition **locally on your computer**. These options do
 
 | Option | Use it for | Tradeoff |
 | --- | --- | --- |
-| `turbo`: Whisper large-v3-turbo | Default everyday dictation, especially with an NVIDIA GPU | A practical speed/accuracy balance; approximately 1.6 GB weight download |
-| `small`: Whisper Small multilingual | Lower memory use or trying CPU-only dictation | Smaller model, but recognition can be less accurate; not the English-only `small.en` model |
-| `large-v3`: full Whisper large-v3 | Testing whether a larger decoder reduces mistakes on your voice | More storage, memory, and processing; live output may lag more |
+| `turbo`: Whisper large-v3-turbo | Default everyday English & Indonesian dictation, especially with an NVIDIA GPU | Practical speed/accuracy balance with full casing and punctuation; ~1.54 GiB weight download |
+| `turbo-id`: `maleo-ai/whisper-large-v3-turbo-id` (INT8, MIT) | **Best local Indonesian accuracy** (recommended as a dedicated Indonesian model via `--for-indonesian`) | Lower Indonesian WER at half the weight size (~776 MiB), but outputs lowercase without punctuation (Dictately capitalizes phrase starts automatically) |
+| `small-id`: `maleo-ai/whisper-small-id` (INT8, Apache-2.0) | Lightweight or CPU-only **Indonesian** dictation | Much lower Indonesian WER than generic `small` (~233 MiB), lowercase without punctuation |
+| `small`: Whisper Small multilingual | Lower memory use or trying CPU-only EN/ID dictation | Smaller model (~461 MiB), less accurate than Turbo or `small-id` |
+| `large-v3`: full Whisper large-v3 | Testing whether a larger 32-layer decoder reduces mistakes on your voice | More storage (~3.0 GB), memory, and processing; live output may lag more |
 
-All three use the same Windows **English / Indonesian** controls, F10 voice/mouse picker, configurable F12/F10 defaults, local history, corrections, and destination protection. Choose one language at a time; installing a model does not add other supported languages.
+All five use the same Windows **English / Indonesian** controls, F10 voice/mouse picker, configurable F12/F10 defaults, local history, corrections, snippets, and destination protection. Because `turbo-id` and `small-id` are fine-tuned specifically for Bahasa Indonesia and omit punctuation, the recommended setup for bilingual users is keeping **`turbo`** as your default/English model and setting **`turbo-id`** (or **`small-id`** on CPU) as your dedicated **Indonesian model**.
 
-Turbo is a pruned version of Large-v3 with 4 decoder layers instead of 32, trading some quality for speed: see the [Turbo model card](https://huggingface.co/openai/whisper-large-v3-turbo). The optional [Small](https://huggingface.co/Systran/faster-whisper-small) and [Large-v3](https://huggingface.co/Systran/faster-whisper-large-v3) packages are CTranslate2 conversions compatible with the existing worker.
+### Local Indonesian benchmark (RTX 3050 6 GB)
 
-On the development laptop (RTX 3050 6 GB, about 16 GB system RAM), Turbo is the tested default. Large-v3 and Small are selectable alternatives, not claims of measured improvements on that device. Available GPU memory, other running apps, power mode, and your audio affect results. The optional models have not received the same real-device recognition testing as Turbo.
+Measured on **20 native Indonesian utterances** from the public [Google FLEURS `id_id` test split](https://huggingface.co/datasets/google/fleurs) (`faster-whisper` 1.2.1, CUDA `int8_float16`, `beam_size=5`, `vad_filter=True`, lowercase & punctuation-stripped WER/CER):
+
+| Model | `model.bin` size | FLEURS `id_id` WER (20 clips) | CER | Median latency | RTF | Casing / Punct |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| **`turbo-id`** (`maleo-ai/whisper-large-v3-turbo-id`) | **776.3 MiB** | **6.80%** | **2.57%** | 0.625 s | 0.0529 | Lowercase (auto phrase-start cap) |
+| `turbo` (`dropbox-dash/faster-whisper-large-v3-turbo`) | 1,542.9 MiB | 7.81% | 2.64% | 0.594 s | 0.0505 | Preserved (`20/20` / `18/20`) |
+| **`small-id`** (`maleo-ai/whisper-small-id`) | **233.3 MiB** | **9.32%** | **3.35%** | 0.844 s | 0.0784 | Lowercase (auto phrase-start cap) |
+| `small` (`Systran/faster-whisper-small`) | 461.1 MiB | 14.36% | 3.87% | 0.515 s | 0.0469 | Preserved (`18/20` / `17/20`) |
+
+These measurements are a bounded 20-clip public test-set check on one RTX 3050 Laptop GPU and align directionally with `maleo-ai`'s published full-split results (FLEURS 684 utts: 6.4% vs 7.1%; Common Voice 17 `id` 3,629 utts: 7.7% vs 10.1%). Note that non-Whisper fast ONNX families such as NVIDIA Parakeet, Orukeet, Nemotron 3.5 ASR, and Cohere Transcribe 2B do not currently support Indonesian.
+
+Turbo is a pruned version of Large-v3 with 4 decoder layers instead of 32, trading some quality for speed: see the [Turbo model card](https://huggingface.co/openai/whisper-large-v3-turbo). The optional [Small](https://huggingface.co/Systran/faster-whisper-small), [Large-v3](https://huggingface.co/Systran/faster-whisper-large-v3), [Turbo-ID](https://huggingface.co/maleo-ai/whisper-large-v3-turbo-id), and [Small-ID](https://huggingface.co/maleo-ai/whisper-small-id) packages are CTranslate2 conversions compatible with the existing worker.
 
 ## Step by step: install a different model
+
+You can switch or download models from **Tray → History & settings → Settings & models → Local speech models**, or from PowerShell:
 
 1. Complete the normal [installation](../README.md#download-and-install) first. Keep the app in its permanent folder
 2. Stop recording, then choose **Quit** in the tray menu, or run the following in PowerShell from the app folder
@@ -25,21 +40,34 @@ On the development laptop (RTX 3050 6 GB, about 16 GB system RAM), Turbo is the 
    & '.\scripts/windows/Stop Dictately.ps1'
    ```
 
-3. Download and select **one** model. **Installer users** use the included worker:
+3. Download and select **one** model (or add `--for-indonesian` to route only Indonesian to a fine-tuned model while keeping English on Turbo). **Installer users** use the included worker:
 
    ```powershell
-   # Choose one
+   # Recommended for Indonesian + English bilingual users (keeps English on Turbo):
+   .\runtime\worker\DictatelyWorker.exe --select-model turbo-id --for-indonesian
+
+   # Or lightweight CPU-friendly Indonesian model:
+   .\runtime\worker\DictatelyWorker.exe --select-model small-id --for-indonesian
+
+   # Or switch the default model for both languages:
    .\runtime\worker\DictatelyWorker.exe --select-model small
    .\runtime\worker\DictatelyWorker.exe --select-model large-v3
+
+   # Clear a dedicated Indonesian model override:
+   .\runtime\worker\DictatelyWorker.exe --select-model none --for-indonesian
    ```
 
    **Source/manual ZIP users** use the private Python environment instead:
 
    ```powershell
-   # Smaller model
-   .\.venv\Scripts\python.exe app/select_model.py small
+   # Dedicated Indonesian model (recommended):
+   .\.venv\Scripts\python.exe app/select_model.py turbo-id --for-indonesian
 
-   # OR full Large-v3
+   # Smaller Indonesian model:
+   .\.venv\Scripts\python.exe app/select_model.py small-id --for-indonesian
+
+   # OR switch the shared default model:
+   .\.venv\Scripts\python.exe app/select_model.py small
    .\.venv\Scripts\python.exe app/select_model.py large-v3
    ```
 
@@ -64,7 +92,7 @@ Launch `launchers/windows/Start Dictately.vbs` again. This reuses/verifies the p
 
 ## Where the files go
 
-Models live beside the app in `models/whisper-turbo`, `models/whisper-small`, or `models/whisper-large-v3`. The choice is saved in `models/selected-model.json`, separate from transcript history. Optional downloads record their resolved Hugging Face revision in `source.json`; Turbo uses the checked-in checksum manifest. Models and selections are excluded from Git and release ZIPs.
+Models live beside the app in `models/whisper-turbo`, `models/whisper-turbo-id`, `models/whisper-small-id`, `models/whisper-small`, or `models/whisper-large-v3`. The choice is saved in `models/selected-model.json` (including optional `indonesian_model` for per-language routing), separate from transcript history. Optional downloads record their resolved Hugging Face revision in `source.json`; Turbo uses the checked-in checksum manifest. Models and selections are excluded from Git and release ZIPs.
 
 Keep the selected folder intact. To free space, quit the app, switch to a different model successfully, then remove only the unused model folder. Setup continues to install/verify Turbo but does not reset an existing model selection. The old developer override `LOCALFLOW_MODEL=small` takes precedence; remove that environment variable if an unexpected Small model keeps loading.
 
@@ -89,4 +117,4 @@ For contributors implementing another engine:
 5. Test phrase boundaries, English/Indonesian selection, silence, punctuation, and corrections before testing desktop insertion
 6. Benchmark real speech accuracy, first-word delay, sustained latency, and peak VRAM on the target hardware before recommending it
 
-The model-switch command intentionally accepts only the three compatible Whisper options above. See [development and testing](DEVELOPMENT.md) for test commands.
+The model-switch command intentionally accepts only the five compatible CTranslate2 Whisper options above (`turbo`, `turbo-id`, `small-id`, `small`, `large-v3`). See [development and testing](DEVELOPMENT.md) for test commands.

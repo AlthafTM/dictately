@@ -8,6 +8,7 @@ Dictately's original application code is licensed under the [MIT License](LICENS
 | CTranslate2 | Local inference | MIT; [source](https://github.com/OpenNMT/CTranslate2) |
 | OpenAI Whisper large-v3-turbo | Speech weights | MIT; [model](https://huggingface.co/openai/whisper-large-v3-turbo) |
 | Whisper Small / Large-v3 conversions | Optional local speech weights | MIT; [Small](https://huggingface.co/Systran/faster-whisper-small), [Large-v3](https://huggingface.co/Systran/faster-whisper-large-v3) |
+| maleo-ai Indonesian Whisper conversions | Optional Indonesian fine-tuned INT8 speech weights | MIT ([whisper-large-v3-turbo-id](https://huggingface.co/maleo-ai/whisper-large-v3-turbo-id)), Apache-2.0 ([whisper-small-id](https://huggingface.co/maleo-ai/whisper-small-id)) |
 | huggingface-hub | Optional model download and revision resolution | Apache-2.0; [source](https://github.com/huggingface/huggingface_hub) |
 | faster-whisper-large-v3-turbo conversion | Pinned model download | [conversion repository](https://huggingface.co/dropbox-dash/faster-whisper-large-v3-turbo); revision and checksums in `assets/speech-model.json` |
 | windows-rs / windows-sys | Windows APIs | MIT or Apache-2.0; [source](https://github.com/microsoft/windows-rs) |

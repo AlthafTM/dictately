@@ -8,7 +8,7 @@ Dictately is a **local live dictation tool**. It listens while you enable record
 2. **Capture:** Windows supplies 16 kHz mono audio. Short PCM buffers stay in memory and travel through a local pipe to a separate Python speech worker
 3. **Recognize:** [faster-whisper](https://github.com/SYSTRAN/faster-whisper) runs OpenAI Whisper through [CTranslate2](https://github.com/OpenNMT/CTranslate2). Compatible NVIDIA GPUs use INT8/FP16; CPU fallback uses INT8
 4. **Confirm phrases:** overlapping decodes are compared before words are committed. A changing tail is held back; pauses and stopping flush the remaining words. This is live phrase output, with a delay that depends on the device, model, and speech, rather than guaranteed immediate word-by-word streaming
-5. **Clean lightly:** optional rules remove a small set of hesitation sounds and repeated pronouns. Sentence-ending periods are removed. Normal dictation does not run a generative rewriting model, and cannot reliably infer what you meant when the audio was recognized incorrectly
+5. **Clean lightly:** optional rules remove English and Indonesian hesitation sounds, collapse repeated pronouns while preserving/hyphenating Indonesian *kata ulang* (`hati-hati`, `teman-teman`), filter Whisper silence/outro hallucinations and dictionary echoes, apply optional formal/baku Indonesian normalization, and expand custom word replacements and voice snippets (`{{tanggal}}`, `{{waktu}}`, `{{date}}`, `{{time}}`). Sentence-ending periods are removed. Normal dictation does not run a generative rewriting model, and cannot reliably infer what you meant when the audio was recognized incorrectly
 6. **Insert:** a dedicated accessibility worker checks the original destination before injecting text. Changing focus pauses insertion. The app does not press Enter or send messages for you
 7. **Correct:** conservative similarity rules can replace a closely matching recent phrase in the same field, or apply supported spoken corrections. These are explicit heuristics with suffix checks, not an AI agent that understands arbitrary editing requests
 
@@ -19,6 +19,7 @@ Dictately is a **local live dictation tool**. It listens while you enable record
 | [OpenAI Whisper large-v3-turbo](https://huggingface.co/openai/whisper-large-v3-turbo) | Default speech recognition model, using a pinned CTranslate2 conversion | Installed by default |
 | [Whisper Small multilingual](https://huggingface.co/Systran/faster-whisper-small) | Smaller compatible speech model | Select `small` for a lower-resource alternative; accuracy can decrease |
 | [Whisper Large-v3](https://huggingface.co/Systran/faster-whisper-large-v3) | Compatible full-sized speech model | Select `large-v3` to compare accuracy at greater memory/latency cost |
+| [maleo-ai Whisper Turbo-ID / Small-ID](https://huggingface.co/maleo-ai/whisper-large-v3-turbo-id) | Indonesian fine-tuned INT8 CTranslate2 weights | Optional dedicated Indonesian model (`turbo-id` / `small-id`) via Settings or `--for-indonesian`, keeping English on Turbo |
 | faster-whisper / CTranslate2 | Local inference software, not additional trained AI models | Shared by all three choices |
 | Silero VAD through faster-whisper | Filters non-speech portions before transcription | Part of the recognition pipeline |
 

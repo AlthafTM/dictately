@@ -25,10 +25,12 @@ Dictately is a free, open-source voice typing app by [AlthafTM](https://github.c
 
 - Live text in short phrases as you speak
 - **English** or **Indonesian**, with voice, click, scroll, and drag language selection
+- **Indonesian-first upgrades**: optional Indonesian fine-tuned models (`turbo-id` / `small-id`) with per-language model routing, kata ulang (*reduplikasi*) preservation/hyphenation, opt-in formal/baku normalization (`gak → tidak`, `udah → sudah`), and expanded Indonesian voice commands and spoken corrections
 - Custom shortcuts, microphone selection, and six overlay positions
-- Spoken corrections, personal vocabulary, and optional filler cleanup
-- [Voice screenshots](docs/USER-GUIDE.md#voice-screenshots) with native crop controls
-- A compact waveform UI and optional launch at sign-in
+- Personal vocabulary (including acronyms and technical symbols), custom word replacements, and voice snippets with dynamic variables (`{{tanggal}}`, `{{waktu}}`, `{{date}}`, `{{time}}`)
+- Local anti-hallucination speech gating, no-speech filtering, dictionary echo protection, and optional local history opt-out
+- [Voice screenshots](docs/USER-GUIDE.md#voice-screenshots) with native crop controls (`screenshot`, `SS`, `tangkapan layar`, `skrinsot`)
+- A compact waveform UI, GUI model selector, and optional launch at sign-in
 
 More languages may be supported later.
 
@@ -106,7 +108,7 @@ Text appears in confirmed phrases rather than word by word. The first phrase can
 
 ## Local AI and privacy
 
-Dictately uses **OpenAI Whisper large-v3-turbo** through **faster-whisper / CTranslate2**. Small multilingual and Large-v3 are also supported. Speech stays on your device; transcript history is stored locally and can be cleared in settings.
+Dictately uses **OpenAI Whisper large-v3-turbo** through **faster-whisper / CTranslate2**. Small multilingual, Large-v3, and Indonesian fine-tuned INT8 checkpoints (**`turbo-id`** and **`small-id`** from `maleo-ai`) are also supported, including per-language routing so Indonesian can use a dedicated fine-tuned model while English stays on Turbo. Speech stays on your device; transcript history is stored locally, can be turned off in settings, and can be cleared anytime.
 
 [Choose an AI model](docs/AI-MODELS.md) · [Architecture, privacy, and limitations](docs/HOW-IT-WORKS.md)
 

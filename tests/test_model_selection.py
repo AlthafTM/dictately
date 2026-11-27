@@ -55,6 +55,39 @@ class ModelSelectionTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 selected_model(root)
 
+    def test_indonesian_subfolder_model_and_per_language_routing(self):
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            turbo = root / "models/whisper-turbo/model.bin"
+            turbo.parent.mkdir(parents=True)
+            turbo.touch()
+            selection = root / "models/selected-model.json"
+            selection.write_text(json.dumps({"model": "turbo"}))
+            hub = MagicMock()
+            hub.HfApi.return_value.model_info.return_value.sha = "maleo-rev"
+
+            def download(**options):
+                self.assertEqual(options["repo_id"], "maleo-ai/whisper-large-v3-turbo-id")
+                self.assertIn("ct2-int8/model.bin", options["allow_patterns"])
+                nested = options["local_dir"] / "ct2-int8"
+                nested.mkdir(parents=True)
+                for filename in ("model.bin", "config.json", "tokenizer.json", "vocabulary.json"):
+                    (nested / filename).touch()
+
+            hub.snapshot_download.side_effect = download
+            with patch.object(select_model, "ROOT", root), patch("sys.argv", ["app/select_model.py", "turbo-id", "--for-indonesian"]), patch.dict("sys.modules", {"huggingface_hub": hub}):
+                select_model.main()
+
+            self.assertEqual(selected_model(root, language="en"), "whisper-turbo")
+            self.assertEqual(selected_model(root, language="id"), "whisper-turbo-id")
+            source = json.loads((root / "models/whisper-turbo-id/source.json").read_text())
+            self.assertEqual(source["subfolder"], "ct2-int8")
+            self.assertEqual(source["revision"], "maleo-rev")
+
+            with patch.object(select_model, "ROOT", root), patch("sys.argv", ["app/select_model.py", "none", "--for-indonesian"]):
+                select_model.main()
+            self.assertEqual(selected_model(root, language="id"), "whisper-turbo")
+
 
 if __name__ == "__main__":
     unittest.main()

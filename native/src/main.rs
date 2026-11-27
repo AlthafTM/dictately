@@ -29,11 +29,29 @@ static LANGUAGE_DOWN: AtomicBool = AtomicBool::new(false);
 // Only the Windows message-loop thread accesses APP; other threads use channels.
 static mut APP: *mut App = std::ptr::null_mut();
 
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Debug)]
+struct Snippet { trigger: String, replacement: String }
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Debug)]
+struct Replacement { source: String, target: String }
+
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(default)]
-struct Settings { language: String, cleanup: bool, accuracy: bool, vocabulary: String, max_recording_seconds: u32, dictation_hotkey:u32, language_hotkey:u32, overlay_position:String, microphone:String }
+struct Settings {
+    language: String, cleanup: bool, accuracy: bool, vocabulary: String,
+    formal_indonesian: bool, save_history: bool,
+    snippets: Vec<Snippet>, replacements: Vec<Replacement>,
+    max_recording_seconds: u32, dictation_hotkey:u32, language_hotkey:u32, overlay_position:String, microphone:String,
+}
 impl Default for Settings {
-    fn default() -> Self { Self { language: "en".into(), cleanup: true, accuracy: true, vocabulary: String::new(), max_recording_seconds: 120, dictation_hotkey:123,language_hotkey:121,overlay_position:"bottom_center".into(),microphone:String::new() } }
+    fn default() -> Self {
+        Self {
+            language: "en".into(), cleanup: true, accuracy: true, vocabulary: String::new(),
+            formal_indonesian: false, save_history: true,
+            snippets: Vec::new(), replacements: Vec::new(),
+            max_recording_seconds: 120, dictation_hotkey:123, language_hotkey:121,
+            overlay_position:"bottom_center".into(), microphone:String::new(),
+        }
+    }
 }
 impl Settings {
     fn load(data: &PathBuf) -> Self {
@@ -274,7 +292,7 @@ impl App {
         SetTimer(self.display.hwnd, 1, 16, None);
         self.timer_interval = 16;
         self.inflight = true;
-        let _ = self.requests.send(worker::Work::Request(self.session, json!({"command":"prepare", "id":0, "cleanup":self.settings.cleanup}), None));
+        let _ = self.requests.send(worker::Work::Request(self.session, json!({"command":"prepare", "id":0, "cleanup":self.settings.cleanup, "language":self.recording_language}), None));
         self.last_work = Instant::now(); self.worker_loaded = true; self.status("recording"); self.log("Recording started");
     }
     fn collect_audio(&mut self) {
@@ -388,7 +406,8 @@ impl App {
             "final":final_chunk, "flush":paused || self.buffer.len() >= 16000*18, "commit_before":cutoff.max(0.), "language":self.recording_language,
             "at_pause":self.last_voice.elapsed() > Duration::from_millis(650),"pause_seconds":self.last_voice.elapsed().as_secs_f32(),
             "skip_before":self.skip_samples as f32 / 16000.,
-            "vocabulary":self.settings.vocabulary, "cleanup":self.settings.cleanup, "accuracy":self.settings.accuracy ,
+            "vocabulary":self.settings.vocabulary, "cleanup":self.settings.cleanup, "accuracy":self.settings.accuracy,
+            "formal_indonesian":self.settings.formal_indonesian, "snippets":self.settings.snippets, "replacements":self.settings.replacements,
             "previous_text": self.raw.chars().rev().take(160).collect::<String>().chars().rev().collect::<String>()});
         if !self.input_blocked {self.display.pipeline.set(pipeline::Stage::Recognizing);}
         self.inflight = true; self.last_sent_len = len; self.last_request = Instant::now();
@@ -566,7 +585,7 @@ impl App {
         }self.status("ready");
     }
     fn save_history(&self) {
-        if self.raw.is_empty() { return; }
+        if self.raw.is_empty() || !self.settings.save_history { return; }
         let path = self.data.join("history.json");
         let mut rows: Vec<Value> = fs::read(&path).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
         let entry = json!({"raw":self.raw, "cleaned":self.cleaned, "at":format!("{}", unix()),
@@ -603,7 +622,7 @@ impl App {
         if self.mic_starting {self.microphone.start(self.session,Duration::ZERO,&self.settings.microphone);}
         if !self.worker_loaded {
             self.worker_loaded=true;self.inflight=true;
-            let _=self.requests.send(worker::Work::Request(self.session,json!({"command":"prepare","id":0,"cleanup":self.settings.cleanup}),None));
+            let _=self.requests.send(worker::Work::Request(self.session,json!({"command":"prepare","id":0,"cleanup":self.settings.cleanup,"language":self.recording_language}),None));
         }
         self.display.wave.iter_mut().for_each(|value|*value=0.);self.display.cue("");self.display.show("","");
         self.update_tip();self.status("recording");
@@ -956,7 +975,7 @@ fn main() {
         // Warm the local models without opening the microphone or showing a popup.
         if !(app.test_target==Some(0) && args.iter().any(|arg|arg=="--test-no-warmup")) {
             app.worker_loaded = true; app.inflight = true;
-            let _ = app.requests.send(worker::Work::Request(0, json!({"command":"prepare", "id":0, "cleanup":app.settings.cleanup}), None));
+            let _ = app.requests.send(worker::Work::Request(0, json!({"command":"prepare", "id":0, "cleanup":app.settings.cleanup, "language":app.settings.language}), None));
         }
         app.status("ready"); app.log("Native Rust controller ready"); SetTimer(hwnd, 1, 1000, None);
         let mut message: MSG = std::mem::zeroed();
@@ -1062,11 +1081,14 @@ fn main() {
         assert_eq!(defaults.overlay_position,"bottom_center");assert!(defaults.microphone.is_empty());
     }
     #[test] fn preferences_survive_language_and_shortcut_serialization() {
-        let mut settings:Settings=serde_json::from_str(r#"{"microphone":"stable-usb-endpoint","overlay_position":"top_right","language":"id"}"#).unwrap();
+        let mut settings:Settings=serde_json::from_str(r#"{"microphone":"stable-usb-endpoint","overlay_position":"top_right","language":"id","formal_indonesian":true,"save_history":false,"snippets":[{"trigger":"salam","replacement":"Hormat saya"}],"replacements":[{"source":"jaksel","target":"Jakarta Selatan"}]}"#).unwrap();
         settings.language="en".into();settings.language_hotkey=889;
         let saved=serde_json::to_string(&settings).unwrap();
         let loaded:Settings=serde_json::from_str(&saved).unwrap();
         assert_eq!(loaded.microphone,"stable-usb-endpoint");assert_eq!(loaded.overlay_position,"top_right");
         assert_eq!(loaded.language,"en");assert_eq!(loaded.language_hotkey,889);
+        assert!(loaded.formal_indonesian);assert!(!loaded.save_history);
+        assert_eq!(loaded.snippets,vec![Snippet{trigger:"salam".into(),replacement:"Hormat saya".into()}]);
+        assert_eq!(loaded.replacements,vec![Replacement{source:"jaksel".into(),target:"Jakarta Selatan".into()}]);
     }
 }

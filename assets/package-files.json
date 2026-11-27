@@ -4,6 +4,7 @@
   "scripts/windows/Stop Dictately.ps1",
   "scripts/windows/setup.ps1",
   "app/live_worker.py",
+  "app/text_processing.py",
   "app/engine.py",
   "app/settings_window.py",
   "app/download_turbo.py",

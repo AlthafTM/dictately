@@ -32,8 +32,8 @@ def language_command(text):
     words=re.findall(r'[a-z]+',text.lower())
     if not words or len(words)>8:
         return None
-    aliases={'english':'en','inggris':'en','indonesia':'id','indonesian':'id'}
-    allowed=set(aliases)|{'both','keduanya','dua','bahasa','and','dan','or','atau','pilih','choose','select','language','languages','the','to','ke','change','ganti'}
+    aliases={'english':'en','inggris':'en','indonesia':'id','indonesian':'id','indo':'id'}
+    allowed=set(aliases)|{'both','keduanya','dua','bahasa','and','dan','or','atau','pilih','choose','select','language','languages','the','to','ke','change','ganti','pindah','pakai','mode','ubah'}
     if any(word not in allowed for word in words):
         return None
     chosen={aliases[word] for word in words if word in aliases}

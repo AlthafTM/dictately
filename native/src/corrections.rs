@@ -11,7 +11,11 @@ fn tokens(text: &str) -> Vec<(usize, String)> {
 }
 pub fn body(text: &str) -> (&str,bool) {
     let lower=text.to_ascii_lowercase();
-    for prefix in ["correction", "correct that", "i mean", "no i meant", "ralat", "maksud saya", "maksudnya"] {
+    for prefix in [
+        "correction", "correct that", "i mean", "no i meant",
+        "maaf maksud saya", "tunggu bukan", "bukan bukan", "maksud saya", "maksud aku", "maksud gue", "maksudnya",
+        "eh bukan", "eh salah", "koreksi", "ralat",
+    ] {
         if lower.starts_with(prefix) && lower[prefix.len()..].chars().next().map(|c| !c.is_alphanumeric()).unwrap_or(true) {
             return (text[prefix.len()..].trim_start_matches(|c:char| c.is_whitespace() || ",:.-".contains(c)),true);
         }
@@ -38,7 +42,14 @@ fn distance(a: &[&str], b: &[&str]) -> usize {
 pub fn explicit(text:&str)->bool {body(text.trim()).1||named(text.trim()).is_some()}
 fn named(text:&str)->Option<(&str,&str)> {
     let lower=text.to_ascii_lowercase();
-    for (prefix,join) in [("replace "," with "),("change "," to "),("ganti "," dengan "),("ubah "," menjadi ")] {
+    for (prefix,join) in [
+        ("replace "," with "),("change "," to "),
+        ("ganti "," dengan "),("ganti "," menjadi "),("ganti "," jadi "),("ganti "," ke "),
+        ("ubah "," menjadi "),("ubah "," jadi "),("ubah "," ke "),
+        ("koreksi "," menjadi "),("koreksi "," jadi "),
+        ("ralat "," menjadi "),("ralat "," jadi "),
+        ("tukar "," dengan "),
+    ] {
         if lower.starts_with(prefix) {if let Some(at)=lower.find(join) {return Some((text[prefix.len()..at].trim_matches(|c:char|c.is_whitespace()||c=='"'),text[at+join.len()..].trim()));}}
     }
     None
@@ -109,6 +120,15 @@ pub fn plan(recent: &str, next: &str) -> Option<Correction> {
         assert!(plan("Saya ingin kirim laporan hari rabu. ","Saya ingin kirim laporan hari sabtu.").is_some());
         assert_eq!(plan("Meeting on Monday. ","Correction, Tuesday.").unwrap().replacement,"Tuesday. ");
         assert!(plan("Saya pergi hari Senin. ","Ralat, Selasa.").is_some());
+        assert!(plan("Saya pergi hari Senin. ","Maksud aku, Selasa.").is_some());
+        assert!(plan("Saya pergi hari Senin. ","Eh bukan, Selasa.").is_some());
+        let text = "Kirim laporan hari Rabu pagi. ";
+        for cmd in ["ganti Rabu jadi Kamis", "ubah Rabu ke Kamis", "koreksi Rabu jadi Kamis", "tukar Rabu dengan Kamis"] {
+            let fix = plan(text, cmd).unwrap_or_else(|| panic!("expected fix for {cmd}"));
+            let mut updated = text.to_string();
+            updated.replace_range(fix.start..fix.end, &fix.replacement);
+            assert_eq!(updated, "Kirim laporan hari Kamis pagi. ", "{cmd}");
+        }
     }
     #[test] fn followup_and_repetition_are_not_edits() {
         for next in ["Please include the latest numbers.","I want to send the report tomorrow.","Tomorrow is good."] {

@@ -123,9 +123,16 @@ Pause, then repeat the sentence with the correction:
 >
 > I would like to send the report on Monday
 
-A closely matching repeat can replace the earlier dictated sentence instead of adding a duplicate. You can also say **Correction, Tuesday** or **Ralat, Selasa** to replace the last dictated word.
+A closely matching repeat can replace the earlier dictated sentence instead of adding a duplicate. You can also say **Correction, Tuesday**, **Ralat, Selasa**, **Maksud aku, Selasa**, or **Eh bukan, Selasa** to replace the last dictated word.
 
-To fix an earlier word, say **Replace Friday with Monday** or **Ganti Jumat dengan Senin**. The phrase must occur once in the tracked text. You can also select dictated text, or place the caret inside a word, and say **Correction, Monday**. Text after the edit stays in place; the caret follows the replacement.
+To fix an earlier word, say **Replace Friday with Monday**, **Ganti Jumat dengan Senin**, **Ganti Jumat jadi Senin**, **Ubah Jumat ke Senin**, or **Koreksi Jumat jadi Senin**. The phrase must occur once in the tracked text. You can also select dictated text, or place the caret inside a word, and say **Correction, Monday** or **Ralat, Senin**. Text after the edit stays in place; the caret follows the replacement.
+
+### Indonesian features, dictionary, and voice snippets
+
+- **Dedicated Indonesian model:** Open **Tray → History & settings → Settings & models** (or run `app/select_model.py turbo-id --for-indonesian`) to use `maleo-ai/whisper-large-v3-turbo-id` or `small-id` for Indonesian while keeping English on Turbo.
+- **Kata ulang & formal/baku mode:** Cleanup collapses repeated Indonesian pronouns (`saya saya`, `aku aku`, `gue gue`) and fillers (`ehm`, `emm`, `eee`, `anu`) while protecting and hyphenating Indonesian reduplication (`hati-hati`, `teman-teman`, `sama-sama`, `tiba-tiba`). Turn on **Normalize casual Indonesian to formal / baku** in Settings to convert casual words (`gak → tidak`, `udah → sudah`, `gimana → bagaimana`, `makasih → terima kasih`).
+- **Dictionary & snippets:** Open **Dictionary & snippets** in Settings to add acronyms/terms (`KTP`, `QRIS`, `GoPay`, `Node.js`, `Telkom University`), explicit word replacements (`source => target`), and voice snippets (`trigger => expansion`) supporting `{{tanggal}}`, `{{waktu}}`, `{{date}}`, `{{time}}`, and `{{datetime}}`.
+- **History opt-out:** Uncheck **Save dictation history locally** in Settings if you do not want transcripts written to `history.json`.
 
 Corrections track up to 8 KB of dictation in the **same field** for **30 minutes**. Dictately verifies that text before editing it. Manual changes, submitting the message, or unsupported editor APIs can prevent a correction. A failed correction is kept in History and is **not appended**. Similarity matching is conservative; explicit replacement commands or a selection give a clearer target.
 
@@ -152,7 +159,7 @@ Speech inference stays on the device. Normal dictation does not save audio recor
 
 ## Voice screenshots
 
-1. Start a fresh dictation recording and say only **“screenshot”**, **“screen shot”**, or **“SS”**
+1. Start a fresh dictation recording and say only **“screenshot”**, **“screen shot”**, **“SS”**, **“tangkapan layar”**, **“tangkap layar”**, or **“skrinsot”**
 2. Pause for **250 ms after the last recognized word**. Dictately hides its waveform immediately and opens the native crop interface without an added delay
 3. Drag over the area you want. Use the native tool to save the selected image, or press **Esc** to cancel
 4. Listening resumes after the crop interface closes, so you can say the command again. Press your dictation shortcut during capture to disable automatic resumption

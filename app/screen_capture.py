@@ -8,7 +8,7 @@ import subprocess
 import sys
 from uuid import uuid4
 
-_COMMANDS=frozenset(('screenshot','screen shot','ss','s s'))
+_COMMANDS=frozenset(('screenshot','screen shot','ss','s s','tangkapan layar','tangkap layar','skrinsot','skrinshot'))
 
 def command_words(text):
     return ' '.join(re.findall(r'[^\W_]+',text.casefold()))
